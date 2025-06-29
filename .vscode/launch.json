@@ -9,7 +9,7 @@
       "stopAtEntry": false,
       "externalConsole": false,
       "cwd": "/home/supore/Projects/Other/PhysEngine/PhysicsEngine",
-      "program": "/home/supore/Projects/Other/PhysEngine/PhysicsEngine/build/Debug/outDebug",
+      "program": "/home/supore/Projects/Other/PhysEngine/PhysicsEngine/build/PhysicsEngine", // CHANGE THIS
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
