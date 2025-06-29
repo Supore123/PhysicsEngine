@@ -1,7 +1,6 @@
+
 #pragma once
 #include <vector>
-
-
 #include "particle.hpp"
 using PhysicsObject = Particle;
 
@@ -15,9 +14,23 @@ public:
     float bottom = -1.0f;
     float top = 1.0f;
 
+    // --- Spatial Partitioning (Uniform Grid) ---
+    int gridRows = 20;
+    int gridCols = 20;
+    float cellWidth = 0.1f;
+    float cellHeight = 0.1f;
+    // Each cell contains indices of objects in that cell
+    std::vector<std::vector<std::vector<size_t>>> gridCells;
+
+    // Call before collision detection each step
+    void updateSpatialGrid();
+
     void addObject(const PhysicsObject& obj);
     void step(float dt);
     void handleCollisions();
     void handleWalls();
     void applyGravityForces();
+    // Diagnostics: Energy and Momentum
+    float totalKineticEnergy() const;
+    void totalMomentum(float& px, float& py) const;
 };

@@ -227,7 +227,7 @@ int main() {
         renderLoop(window, gridProgram, gridVAO, gridVertices.size() / 2, axisProgram, axisVAO, axisVertices.size() / 2, gridRenderer, world, pointProgram);
 
         // Draw ImGui UI (just widgets, not rendering)
-        drawUI(uiState, window);
+        drawUI(uiState, window, &world);
 
         // --- Ensure OpenGL state for ImGui ---
         int fbWidth, fbHeight;

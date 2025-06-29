@@ -7,22 +7,59 @@ struct Color3 {
 };
 
 // Particle/object type
+/**
+ * ObjectType:
+ *  - Normal: Standard particle
+ *  - Merged: Result of a merge
+ *  - BlackHole: Extremely massive, absorbs others within eventHorizon
+ *  - Star: Massive, can be static or moving, may emit light
+ *  - Planet: For orbit simulation, can orbit a Star or BlackHole
+ *  - Asteroid: Small, can be destroyed/absorbed
+ */
 enum class ObjectType {
     Normal,
-    Merged
+    Merged,
+    BlackHole,   // Extremely massive, absorbs others
+    Star,        // Massive, can be static or moving
+    Planet,      // For orbit simulation
+    Asteroid     // Small, can be destroyed/absorbed
 };
 
 // Particle/physics object
+/**
+ * Particle:
+ *  - x, y: Position
+ *  - vx, vy: Velocity
+ *  - radius: Visual/physical radius
+ *  - mass: Mass (affects gravity, inertia)
+ *  - charge: For future electric/magnetic effects
+ *  - isStatic: If true, does not move
+ *  - type: See ObjectType
+ *  - color: For rendering
+ *  - components: Used if type == Merged (originals)
+ *  - eventHorizon: For BlackHole (radius of no return)
+ *  - luminosity: For Star (brightness)
+ *  - absorption: For BlackHole (absorption strength)
+ *  - orbitRadius, orbitAngle, orbitTarget: For Planet orbits
+ */
 struct Particle {
     float x, y;
     float vx, vy;
     float radius;
     float mass;
     float charge = 0.0f;
-    bool isStatic;
+    bool isStatic = false;
     ObjectType type = ObjectType::Normal;
     Color3 color = {1.0f, 0.0f, 0.0f};
     std::vector<Particle> components; // Only used if type == Merged
+    // For celestial/black hole types:
+    float eventHorizon = 0.0f; // For BlackHole: radius of no return
+    float luminosity = 0.0f;   // For Star: brightness
+    float absorption = 0.0f;   // For BlackHole: how strongly it absorbs
+    float orbitRadius = 0.0f;  // For Planet: for scenario setup
+    float orbitAngle = 0.0f;   // For Planet: for scenario setup
+    int orbitTarget = -1;      // Index of object being orbited (if any)
+    // You can add more as needed
 };
 
 // Utility functions for particles

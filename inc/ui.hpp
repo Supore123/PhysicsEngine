@@ -13,4 +13,6 @@ struct UIState {
     bool paused = false;
 };
 
-void drawUI(UIState& state, GLFWwindow* window);
+// Now takes PhysicsWorld* for diagnostics display
+class PhysicsWorld;
+void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world);
