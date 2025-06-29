@@ -85,6 +85,14 @@ void PhysicsWorld::handleCollisions() {
     const float restitution = 0.95f; // More bounce for lively collisions
     const float percent = 0.2f; // Less positional correction for more natural collisions
     const float slop = 1e-4f;   // Small value to allow tiny overlap
+    // --- Hybrid collision/merge/split logic ---
+    const float mergeSpeedThreshold = 0.5f; // Tune as needed
+    std::vector<size_t> toRemove;
+    struct MergeEvent { size_t i, j; };
+    struct SplitEvent { size_t mergedIdx, hitterIdx; };
+    std::vector<MergeEvent> merges;
+    std::vector<MergeEvent> bounces;
+    std::vector<SplitEvent> splits;
     for (size_t i = 0; i < objects.size(); ++i) {
         for (size_t j = i + 1; j < objects.size(); ++j) {
             PhysicsObject& a = objects[i];
@@ -93,56 +101,119 @@ void PhysicsWorld::handleCollisions() {
             float dx = b.x - a.x;
             float dy = b.y - a.y;
             float distSq = dx * dx + dy * dy;
-            float minDist = a.radius + b.radius;
+            float minDist = a.radius + b.radius - 0.01f;
             if (distSq < minDist * minDist) {
                 float dist = std::sqrt(distSq) + 1e-8f;
                 float nx = dx / dist;
                 float ny = dy / dist;
-                // --- Positional correction (Baumgarte stabilization) ---
-                float penetration = minDist - dist;
-                float correction = std::max(penetration - slop, 0.0f) / ((a.isStatic ? 0.0f : 1.0f) + (b.isStatic ? 0.0f : 1.0f)) * percent;
-                if (!a.isStatic && !b.isStatic) {
-                    a.x -= nx * correction * 0.5f;
-                    a.y -= ny * correction * 0.5f;
-                    b.x += nx * correction * 0.5f;
-                    b.y += ny * correction * 0.5f;
-                } else if (!a.isStatic) {
-                    a.x -= nx * correction;
-                    a.y -= ny * correction;
-                } else if (!b.isStatic) {
-                    b.x += nx * correction;
-                    b.y += ny * correction;
+                float relVx = b.vx - a.vx;
+                float relVy = b.vy - a.vy;
+                float relSpeed = relVx * nx + relVy * ny;
+                // If both are normal and slow, merge
+                if (a.type == ObjectType::Normal && b.type == ObjectType::Normal && std::abs(relSpeed) < mergeSpeedThreshold) {
+                    merges.push_back({i, j});
+                } else if (a.type == ObjectType::Normal && b.type == ObjectType::Normal) {
+                    bounces.push_back({i, j});
+                } else if ((a.type == ObjectType::Merged && b.type == ObjectType::Normal) && std::abs(relSpeed) > mergeSpeedThreshold) {
+                    splits.push_back({i, j});
+                } else if ((a.type == ObjectType::Normal && b.type == ObjectType::Merged) && std::abs(relSpeed) > mergeSpeedThreshold) {
+                    splits.push_back({j, i});
+                } else if ((a.type == ObjectType::Merged && b.type == ObjectType::Normal) || (a.type == ObjectType::Normal && b.type == ObjectType::Merged)) {
+                    // Slow hit: merge normal into merged
+                    merges.push_back({i, j});
+                } else if (a.type == ObjectType::Merged && b.type == ObjectType::Merged) {
+                    // Merged-merged: always bounce for now
+                    bounces.push_back({i, j});
                 }
-
-                // Project velocities onto normal and tangential directions
-                float vax = a.vx, vay = a.vy;
-                float vbx = b.vx, vby = b.vy;
-                float van = vax * nx + vay * ny;
-                float vbn = vbx * nx + vby * ny;
-                float vat = -vax * ny + vay * nx;
-                float vbt = -vbx * ny + vby * nx;
-                float ma = a.isStatic ? 1e10f : a.mass;
-                float mb = b.isStatic ? 1e10f : b.mass;
-                // Only resolve if objects are moving toward each other (van - vbn > 0)
-                if (van - vbn < 0.0f) continue;
-
-                // --- Impulse-based collision resolution ---
-                float relVel = van - vbn;
-                float impulse = -(1.0f + restitution) * relVel / (1.0f / ma + 1.0f / mb);
-                float impA = impulse / ma;
-                float impB = impulse / mb;
-                if (!a.isStatic) {
-                    a.vx += impA * nx;
-                    a.vy += impA * ny;
-                }
-                if (!b.isStatic) {
-                    b.vx -= impB * nx;
-                    b.vy -= impB * ny;
-                }
-
-                // Tangential velocity (friction, optional, can be added here)
-                // Optionally, you can add a small tangential impulse for more realism
             }
+        }
+    }
+    // Handle merges
+    std::vector<bool> merged(objects.size(), false);
+    for (const auto& m : merges) {
+        if (merged[m.i] || merged[m.j]) continue;
+        PhysicsObject& a = objects[m.i];
+        PhysicsObject& b = objects[m.j];
+        float totalMass = a.mass + b.mass;
+        float x = (a.x * a.mass + b.x * b.mass) / totalMass;
+        float y = (a.y * a.mass + b.y * b.mass) / totalMass;
+        float vx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
+        float vy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
+        float newRadius = std::sqrt(a.radius * a.radius + b.radius * b.radius) * 1.3f;
+        PhysicsObject mergedObj = {x, y, vx, vy, newRadius, totalMass, 0.0f, false, ObjectType::Merged};
+        // Store components
+        if (a.type == ObjectType::Merged) mergedObj.components = a.components; else mergedObj.components = {a};
+        if (b.type == ObjectType::Merged) mergedObj.components.insert(mergedObj.components.end(), b.components.begin(), b.components.end()); else mergedObj.components.push_back(b);
+        merged[m.i] = true;
+        merged[m.j] = true;
+        objects.push_back(mergedObj);
+    }
+    // Handle splits
+    for (const auto& s : splits) {
+        PhysicsObject& mergedObj = objects[s.mergedIdx];
+        if (mergedObj.type != ObjectType::Merged) continue;
+        // Place all components at mergedObj's position with a small velocity kick
+        float kick = 0.5f;
+        for (auto& part : mergedObj.components) {
+            part.x = mergedObj.x;
+            part.y = mergedObj.y;
+            float angle = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
+            part.vx = mergedObj.vx + std::cos(angle) * kick;
+            part.vy = mergedObj.vy + std::sin(angle) * kick;
+            objects.push_back(part);
+        }
+        merged[s.mergedIdx] = true;
+        // Optionally, remove the hitter too (simulate absorption)
+        // merged[s.hitterIdx] = true;
+    }
+    // Handle bounces (impulse-based)
+    for (const auto& b : bounces) {
+        if (merged[b.i] || merged[b.j]) continue;
+        PhysicsObject& a = objects[b.i];
+        PhysicsObject& bobj = objects[b.j];
+        float dx = bobj.x - a.x;
+        float dy = bobj.y - a.y;
+        float dist = std::sqrt(dx * dx + dy * dy) + 1e-8f;
+        float nx = dx / dist;
+        float ny = dy / dist;
+        float penetration = (a.radius + bobj.radius - 0.01f) - dist;
+        float correction = std::max(penetration - slop, 0.0f) / ((a.isStatic ? 0.0f : 1.0f) + (bobj.isStatic ? 0.0f : 1.0f)) * percent;
+        if (!a.isStatic && !bobj.isStatic) {
+            a.x -= nx * correction * 0.5f;
+            a.y -= ny * correction * 0.5f;
+            bobj.x += nx * correction * 0.5f;
+            bobj.y += ny * correction * 0.5f;
+        } else if (!a.isStatic) {
+            a.x -= nx * correction;
+            a.y -= ny * correction;
+        } else if (!bobj.isStatic) {
+            bobj.x += nx * correction;
+            bobj.y += ny * correction;
+        }
+        float vax = a.vx, vay = a.vy;
+        float vbx = bobj.vx, vby = bobj.vy;
+        float van = vax * nx + vay * ny;
+        float vbn = vbx * nx + vby * ny;
+        float ma = a.isStatic ? 1e10f : a.mass;
+        float mb = bobj.isStatic ? 1e10f : bobj.mass;
+        if (van - vbn < 0.0f) continue;
+        float relVel = van - vbn;
+        float impulse = -(1.0f + restitution) * relVel / (1.0f / ma + 1.0f / mb);
+        float impA = impulse / ma;
+        float impB = impulse / mb;
+        if (!a.isStatic) {
+            a.vx += impA * nx;
+            a.vy += impA * ny;
+        }
+        if (!bobj.isStatic) {
+            bobj.vx -= impB * nx;
+            bobj.vy -= impB * ny;
+        }
+    }
+    // Remove merged/split objects (from back to front)
+    for (int i = static_cast<int>(objects.size()) - 1; i >= 0; --i) {
+        if (i < static_cast<int>(merged.size()) && merged[i]) {
+            objects.erase(objects.begin() + i);
         }
     }
 }

@@ -1,14 +1,9 @@
 #pragma once
 #include <vector>
 
-struct PhysicsObject {
-    float x, y;      // Position
-    float vx, vy;    // Velocity
-    float radius;    // For circle objects (can be extended)
-    float mass;
-    float charge = 0.0f;
-    bool isStatic;
-};
+
+#include "particle.hpp"
+using PhysicsObject = Particle;
 
 class PhysicsWorld {
 public:
