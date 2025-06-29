@@ -15,4 +15,5 @@ target_include_directories(PhysicsEngine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc
 # Link required libraries
 find_package(OpenGL REQUIRED)
 find_package(glfw3 REQUIRED)
-target_link_libraries(PhysicsEngine PRIVATE OpenGL::GL glfw)
+target_link_libraries(PhysicsEngine PRIVATE OpenGL::GL glfw GLEW)
+
