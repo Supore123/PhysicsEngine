@@ -3,6 +3,7 @@
 #include "particle.hpp"
 #include <vector>
 #include <cstdio>
+#include <cmath>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
@@ -36,31 +37,126 @@ void renderLoop(GLFWwindow* window, GLuint gridProgram, GLuint gridVAO, int grid
     // Draw physics objects as circular points (point masses) in red
     glUseProgram(pointProgram);
     if (pointColorLoc == -1) pointColorLoc = glGetUniformLocation(pointProgram, "color");
-    std::vector<float> points;
-    std::vector<float> sizes;
-    std::vector<Color3> colors;
     float minMass, maxMass;
     ParticleUtils::computeMassRange(world.objects, minMass, maxMass);
-    for (const auto& obj : world.objects) {
-        points.push_back(obj.x);
-        points.push_back(obj.y);
-        colors.push_back(ParticleUtils::getColor(reinterpret_cast<const Particle&>(obj), minMass, maxMass));
-        sizes.push_back(ParticleUtils::getSize(reinterpret_cast<const Particle&>(obj)));
+    for (size_t i = 0; i < world.objects.size(); ++i) {
+        const auto& obj = world.objects[i];
+        Color3 color = obj.color;
+        float size = obj.radius * 600.0f;
+        bool customDraw = false;
+        // --- Visual rotation: draw orientation marker if spinAngle is nonzero ---
+        auto drawOrientationMarker = [&](const Particle& p, float markerLen, float markerWidth, const Color3& markerColor) {
+            if (std::abs(p.spin) > 1e-6f || std::abs(p.spinAngle) > 1e-6f) {
+                float angle = p.spinAngle;
+                float x1 = p.x + std::cos(angle) * (p.radius + markerLen);
+                float y1 = p.y + std::sin(angle) * (p.radius + markerLen);
+                float x0 = p.x + std::cos(angle) * p.radius;
+                float y0 = p.y + std::sin(angle) * p.radius;
+                glUseProgram(axisProgram);
+                glUniform3f(colorLoc, markerColor.r, markerColor.g, markerColor.b);
+                glLineWidth(markerWidth);
+                glBegin(GL_LINES);
+                glVertex2f(x0, y0);
+                glVertex2f(x1, y1);
+                glEnd();
+                glLineWidth(1.0f);
+            }
+        };
+        // Visually distinct rendering for each type
+        switch (obj.type) {
+            case ObjectType::BlackHole:
+                // Draw event horizon as a thick dark ring
+                glUseProgram(pointProgram);
+                glUniform3f(pointColorLoc, 0.1f, 0.1f, 0.1f);
+                glPointSize(obj.eventHorizon * 1200.0f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                // Draw core as a smaller dark circle
+                glUniform3f(pointColorLoc, 0.2f, 0.2f, 0.2f);
+                glPointSize(obj.radius * 600.0f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                // Draw orientation marker for spin
+                drawOrientationMarker(obj, obj.radius * 0.7f, 3.0f, {0.8f, 0.2f, 0.2f});
+                customDraw = true;
+                break;
+            case ObjectType::Star:
+                // Draw a glowing star (core + outer glow)
+                glUseProgram(pointProgram);
+                glUniform3f(pointColorLoc, color.r, color.g, color.b);
+                glPointSize(size * 2.0f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                glUniform3f(pointColorLoc, 1.0f, 1.0f, 0.6f);
+                glPointSize(size * 1.2f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                glUniform3f(pointColorLoc, color.r, color.g, color.b);
+                glPointSize(size);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                drawOrientationMarker(obj, obj.radius * 1.2f, 2.0f, {1.0f, 0.8f, 0.2f});
+                customDraw = true;
+                break;
+            case ObjectType::Planet:
+                // Draw planet with a colored ring for orbit
+                glUseProgram(pointProgram);
+                glUniform3f(pointColorLoc, 0.7f, 0.7f, 0.7f);
+                glPointSize(size * 1.5f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                glUniform3f(pointColorLoc, color.r, color.g, color.b);
+                glPointSize(size);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                drawOrientationMarker(obj, obj.radius * 1.1f, 2.0f, {0.2f, 0.8f, 1.0f});
+                customDraw = true;
+                break;
+            case ObjectType::Asteroid:
+                // Draw asteroid as a small brown/gray point
+                glUseProgram(pointProgram);
+                glUniform3f(pointColorLoc, color.r * 0.7f, color.g * 0.6f, color.b * 0.5f);
+                glPointSize(size * 0.8f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                drawOrientationMarker(obj, obj.radius * 0.7f, 1.5f, {0.7f, 0.7f, 0.7f});
+                customDraw = true;
+                break;
+            case ObjectType::Merged:
+                // Draw merged as cyan with a white outline
+                glUseProgram(pointProgram);
+                glUniform3f(pointColorLoc, 1.0f, 1.0f, 1.0f);
+                glPointSize(size * 1.3f);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                glUniform3f(pointColorLoc, 0.2f, 0.8f, 1.0f);
+                glPointSize(size);
+                glBegin(GL_POINTS);
+                glVertex2f(obj.x, obj.y);
+                glEnd();
+                drawOrientationMarker(obj, obj.radius * 1.0f, 2.0f, {0.2f, 1.0f, 1.0f});
+                customDraw = true;
+                break;
+            default:
+                break;
+        }
+        if (!customDraw) {
+            glUseProgram(pointProgram);
+            glUniform3f(pointColorLoc, color.r, color.g, color.b);
+            glPointSize(size);
+            glBegin(GL_POINTS);
+            glVertex2f(obj.x, obj.y);
+            glEnd();
+            drawOrientationMarker(obj, obj.radius * 1.0f, 2.0f, {1.0f, 1.0f, 1.0f});
+        }
     }
-    GLuint pointVAO, pointVBO;
-    glGenVertexArrays(1, &pointVAO);
-    glGenBuffers(1, &pointVBO);
-    glBindVertexArray(pointVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
-    glBufferData(GL_ARRAY_BUFFER, points.size() * sizeof(float), points.data(), GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    // Draw each point with its color and size
-    for (size_t i = 0; i < points.size() / 2; ++i) {
-        glUniform3f(pointColorLoc, colors[i].r, colors[i].g, colors[i].b);
-        glPointSize(sizes[i]);
-        glDrawArrays(GL_POINTS, i, 1);
-    }
-    glDeleteVertexArrays(1, &pointVAO);
-    glDeleteBuffers(1, &pointVBO);
 }

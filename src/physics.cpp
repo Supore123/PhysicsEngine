@@ -32,6 +32,16 @@ void PhysicsWorld::totalMomentum(float& px, float& py) const {
 
 
 void PhysicsWorld::addObject(const PhysicsObject& obj) {
+    // Prevent objects from spawning inside existing objects
+    for (const auto& existing : objects) {
+        float dx = obj.x - existing.x;
+        float dy = obj.y - existing.y;
+        float minDist = obj.radius + existing.radius;
+        if ((dx * dx + dy * dy) < (minDist * minDist)) {
+            // Overlap detected, do not spawn
+            return;
+        }
+    }
     objects.push_back(obj);
 }
 
@@ -86,6 +96,7 @@ void PhysicsWorld::step(float dt) {
             if (idx < objects.size()) objects.erase(objects.begin() + idx);
         }
 
+
         // 2. Planet orbit logic: update position/velocity for planets with valid orbitTarget
         for (auto& obj : objects) {
             if (obj.type == ObjectType::Planet && obj.orbitTarget >= 0 && obj.orbitTarget < (int)objects.size()) {
@@ -100,6 +111,18 @@ void PhysicsWorld::step(float dt) {
                 obj.vy =  v * std::cos(angle) + target.vy;
                 // Advance orbit angle
                 obj.orbitAngle += 0.01f; // Speed can be parameterized
+            }
+        }
+
+        // 3. Visual rotation/spin logic: advance spin angle for all objects with nonzero spin
+        for (auto& obj : objects) {
+            // 'spin' is angular velocity in radians per second
+            // 'spinAngle' is the current orientation (in radians)
+            if (std::abs(obj.spin) > 1e-6f) {
+                obj.spinAngle += obj.spin * subdt; // Time-step independent
+                // Keep spinAngle in [0, 2pi) for numerical stability
+                while (obj.spinAngle >= 2 * M_PI) obj.spinAngle -= 2 * M_PI;
+                while (obj.spinAngle < 0) obj.spinAngle += 2 * M_PI;
             }
         }
 
@@ -124,8 +147,8 @@ void PhysicsWorld::step(float dt) {
     }
     return;
 }
-// Universal gravitational constant (arbitrary scale for simulation)
-constexpr float G = 0.5f;
+// Universal gravitational constant (scaled for simulation realism)
+constexpr float G = 0.01f; // Lowered from 0.5f for more stable orbits and realistic gravity
 
 void PhysicsWorld::applyGravityForces() {
     // Apply Newtonian gravity between all pairs
@@ -177,15 +200,12 @@ void PhysicsWorld::handleWalls() {
 }
 
 void PhysicsWorld::handleCollisions() {
-    // --- Improved smooth collision, merging, and splitting logic ---
+    // --- Improved smooth collision logic (no merging or splitting) ---
     updateSpatialGrid();
     const float restitution = 0.95f;
     const float percent = 0.2f;
     const float slop = 1e-4f;
-    const float mergeSpeedThreshold = 0.5f;
-    const float splitSpeedThreshold = 2.0f;
-    std::vector<std::pair<size_t, size_t>> toMerge;
-    std::vector<size_t> toSplit;
+    // No object creation from collisions or interactions
     std::vector<std::pair<size_t, size_t>> checkedPairs;
     // Only check collisions within each cell and neighboring cells
     for (int row = 0; row < gridRows; ++row) {
@@ -216,19 +236,6 @@ void PhysicsWorld::handleCollisions() {
                                 float dist = std::sqrt(distSq) + 1e-8f;
                                 float nx = dx / dist;
                                 float ny = dy / dist;
-                                float relVx = b.vx - a.vx;
-                                float relVy = b.vy - a.vy;
-                                float relSpeed = relVx * nx + relVy * ny;
-                                // --- Merging ---
-                                if (a.type == ObjectType::Normal && b.type == ObjectType::Normal && std::abs(relSpeed) < mergeSpeedThreshold) {
-                                    toMerge.push_back({i, j});
-                                    continue;
-                                }
-                                // --- Splitting: If a merged particle is hit hard, split it ---
-                                if ((a.type == ObjectType::Merged || b.type == ObjectType::Merged) && std::abs(relSpeed) > splitSpeedThreshold) {
-                                    if (a.type == ObjectType::Merged) toSplit.push_back(i);
-                                    if (b.type == ObjectType::Merged) toSplit.push_back(j);
-                                }
                                 // --- Elastic collision (impulse-based) ---
                                 float ma = a.isStatic ? 1e10f : a.mass;
                                 float mb = b.isStatic ? 1e10f : b.mass;
@@ -270,64 +277,7 @@ void PhysicsWorld::handleCollisions() {
             }
         }
     }
-    // --- Handle merges (conserve angular momentum, blend color) ---
-    std::vector<bool> merged(objects.size(), false);
-    std::vector<PhysicsObject> newMergedObjects;
-    for (const auto& pair : toMerge) {
-        size_t i = pair.first, j = pair.second;
-        if (merged[i] || merged[j]) continue;
-        PhysicsObject& a = objects[i];
-        PhysicsObject& b = objects[j];
-        float totalMass = a.mass + b.mass;
-        float x = (a.x * a.mass + b.x * b.mass) / totalMass;
-        float y = (a.y * a.mass + b.y * b.mass) / totalMass;
-        float vx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
-        float vy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
-        float newRadius = std::sqrt(a.radius * a.radius + b.radius * b.radius); // area additivity
-        // Blend color by mass
-        Color3 color = {
-            (a.color.r * a.mass + b.color.r * b.mass) / totalMass,
-            (a.color.g * a.mass + b.color.g * b.mass) / totalMass,
-            (a.color.b * a.mass + b.color.b * b.mass) / totalMass
-        };
-        PhysicsObject mergedObj = {x, y, vx, vy, newRadius, totalMass, 0.0f, false, ObjectType::Merged, color};
-        merged[i] = true;
-        merged[j] = true;
-        newMergedObjects.push_back(mergedObj);
-    }
-    // Remove merged objects (from back to front)
-    for (int i = static_cast<int>(objects.size()) - 1; i >= 0; --i) {
-        if (i < static_cast<int>(merged.size()) && merged[i]) {
-            objects.erase(objects.begin() + i);
-        }
-    }
-    // Now add all new merged objects
-    for (const auto& obj : newMergedObjects) {
-        objects.push_back(obj);
-    }
-    // --- Handle splits (fragmentation) ---
-    for (size_t idx : toSplit) {
-        if (idx >= objects.size()) continue;
-        PhysicsObject& obj = objects[idx];
-        if (obj.type != ObjectType::Merged) continue;
-        // Split into two equal-mass pieces with opposite velocities
-        float angle = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
-        float speed = std::sqrt(obj.vx * obj.vx + obj.vy * obj.vy) * 0.5f + 0.2f;
-        float m = obj.mass * 0.5f;
-        float r = obj.radius * 0.707f; // sqrt(0.5) for area
-        Color3 c = obj.color;
-        PhysicsObject a = {obj.x, obj.y, std::cos(angle) * speed, std::sin(angle) * speed, r, m, 0.0f, false, ObjectType::Normal, c};
-        PhysicsObject b = {obj.x, obj.y, -std::cos(angle) * speed, -std::sin(angle) * speed, r, m, 0.0f, false, ObjectType::Normal, c};
-        objects.push_back(a);
-        objects.push_back(b);
-        merged[idx] = true;
-    }
-    // Remove merged/split objects (from back to front)
-    for (int i = static_cast<int>(objects.size()) - 1; i >= 0; --i) {
-        if (i < static_cast<int>(merged.size()) && merged[i]) {
-            objects.erase(objects.begin() + i);
-        }
-    }
+    // Merging and splitting fully removed
 }
 
 void PhysicsWorld::updateSpatialGrid() {

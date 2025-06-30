@@ -59,6 +59,9 @@ struct Particle {
     float orbitRadius = 0.0f;  // For Planet: for scenario setup
     float orbitAngle = 0.0f;   // For Planet: for scenario setup
     int orbitTarget = -1;      // Index of object being orbited (if any)
+    // Visual rotation
+    float spin = 0.0f;         // Angular velocity (radians per step)
+    float spinAngle = 0.0f;    // Current orientation (radians)
     // You can add more as needed
 };
 

@@ -9,11 +9,58 @@ static bool showDemoWindow = true; // Start enabled for debug
 
 // Now takes PhysicsWorld* for diagnostics display
 void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
+    if (ImGui::Button("Solar System Example") && world) {
+        world->objects.clear();
+        // Add a central star (the Sun)
+        Particle sun;
+        sun.x = 0.0f; sun.y = 0.0f;
+        sun.vx = 0.0f; sun.vy = 0.0f;
+        sun.radius = 0.08f;
+        sun.mass = 20.0f;
+        sun.isStatic = true;
+        sun.type = ObjectType::Star;
+        sun.luminosity = 1.5f;
+        sun.color = {1.0f, 0.9f, 0.2f};
+        sun.spin = 1.0f;
+        world->addObject(sun);
+
+        // Define planet parameters: {orbitRadius, radius, mass, color, spin}
+        struct PlanetDef { float orbitRadius, radius, mass, spin; Color3 color; };
+        std::vector<PlanetDef> planets = {
+            {0.13f, 0.018f, 0.3f, 3.0f, {0.7f, 0.7f, 0.7f}}, // Mercury
+            {0.17f, 0.022f, 0.6f, 2.5f, {0.9f, 0.7f, 0.4f}}, // Venus
+            {0.22f, 0.024f, 0.7f, 2.0f, {0.2f, 0.5f, 1.0f}}, // Earth
+            {0.28f, 0.020f, 0.5f, 2.2f, {1.0f, 0.4f, 0.2f}}, // Mars
+            {0.36f, 0.045f, 2.0f, 1.5f, {0.9f, 0.8f, 0.5f}}, // Jupiter
+            {0.44f, 0.038f, 1.5f, 1.2f, {0.8f, 0.9f, 0.7f}}, // Saturn
+            {0.52f, 0.030f, 1.0f, 1.0f, {0.5f, 0.8f, 1.0f}}, // Uranus
+            {0.60f, 0.028f, 0.8f, 0.8f, {0.4f, 0.7f, 1.0f}}  // Neptune
+        };
+        for (size_t i = 0; i < planets.size(); ++i) {
+            const auto& def = planets[i];
+            Particle planet;
+            planet.orbitTarget = 0; // Sun
+            planet.orbitRadius = def.orbitRadius;
+            planet.orbitAngle = float(i) * 0.7f; // Staggered starting positions
+            planet.x = sun.x + planet.orbitRadius * cos(planet.orbitAngle);
+            planet.y = sun.y + planet.orbitRadius * sin(planet.orbitAngle);
+            planet.radius = def.radius;
+            planet.mass = def.mass;
+            planet.isStatic = false;
+            planet.type = ObjectType::Planet;
+            planet.color = def.color;
+            planet.spin = def.spin;
+            float v = sqrt(0.5f * sun.mass / std::max(planet.orbitRadius, 1e-4f));
+            planet.vx = -v * sin(planet.orbitAngle);
+            planet.vy =  v * cos(planet.orbitAngle);
+            world->addObject(planet);
+        }
+    }
     // --- Example Scenarios ---
     ImGui::Begin("Example Scenarios");
     if (ImGui::Button("Planet Orbiting Star") && world) {
         world->objects.clear();
-        // Add a star at the center
+        // Add a spinning star at the center
         Particle star;
         star.x = 0.0f; star.y = 0.0f;
         star.vx = 0.0f; star.vy = 0.0f;
@@ -23,8 +70,9 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
         star.type = ObjectType::Star;
         star.luminosity = 1.0f;
         star.color = {1.0f, 0.9f, 0.2f};
+        star.spin = 1.2f; // Add visible spin
         world->addObject(star);
-        // Add a planet in orbit
+        // Add a planet in orbit with spin
         Particle planet;
         planet.orbitTarget = 0; // index of star
         planet.orbitRadius = 0.35f;
@@ -36,6 +84,7 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
         planet.isStatic = false;
         planet.type = ObjectType::Planet;
         planet.color = {0.2f, 0.5f, 1.0f};
+        planet.spin = 2.5f; // Add visible spin
         float v = sqrt(0.5f * star.mass / std::max(planet.orbitRadius, 1e-4f));
         planet.vx = 0.0f;
         planet.vy = v;
@@ -44,42 +93,45 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
 
     if (ImGui::Button("Binary Star System") && world) {
         world->objects.clear();
-        // Two stars orbiting each other
+        // Two spinning stars
+        float m1 = 6.0f, m2 = 6.0f;
+        float d = 0.4f; // separation
+        float barycenter_x = 0.0f;
+        float x1 = barycenter_x - d * m2 / (m1 + m2);
+        float x2 = barycenter_x + d * m1 / (m1 + m2);
+        float y1 = 0.0f, y2 = 0.0f;
         Particle star1, star2;
-        star1.x = -0.15f; star1.y = 0.0f;
-        star2.x =  0.15f; star2.y = 0.0f;
-        star1.vx = 0.0f; star1.vy = 0.25f;
-        star2.vx = 0.0f; star2.vy = -0.25f;
+        star1.x = x1; star1.y = y1;
+        star2.x = x2; star2.y = y2;
+        star1.vx = 0.0f; star1.vy = 0.0f;
+        star2.vx = 0.0f; star2.vy = 0.0f;
         star1.radius = star2.radius = 0.06f;
-        star1.mass = star2.mass = 6.0f;
-        star1.isStatic = star2.isStatic = false;
+        star1.mass = m1; star2.mass = m2;
+        star1.isStatic = star2.isStatic = true;
         star1.type = star2.type = ObjectType::Star;
         star1.luminosity = star2.luminosity = 1.0f;
         star1.color = {1.0f, 0.7f, 0.2f};
         star2.color = {1.0f, 0.3f, 0.7f};
+        star1.spin = 1.5f;
+        star2.spin = -1.5f;
         world->addObject(star1);
         world->addObject(star2);
-        // Add a planet orbiting both
+        // Add a planet stable between the two stars (L1 point) with spin
         Particle planet;
-        planet.orbitTarget = 0; // orbit first star for simplicity
-        planet.orbitRadius = 0.45f;
-        planet.orbitAngle = 0.0f;
-        planet.x = star1.x + planet.orbitRadius;
-        planet.y = star1.y;
+        planet.x = barycenter_x; planet.y = 0.0f;
+        planet.vx = 0.0f; planet.vy = 0.0f;
         planet.radius = 0.025f;
         planet.mass = 0.8f;
         planet.isStatic = false;
         planet.type = ObjectType::Planet;
         planet.color = {0.2f, 1.0f, 0.7f};
-        float v = sqrt(0.5f * (star1.mass + star2.mass) / std::max(planet.orbitRadius, 1e-4f));
-        planet.vx = 0.0f;
-        planet.vy = v;
+        planet.spin = 2.0f;
         world->addObject(planet);
     }
 
     if (ImGui::Button("Black Hole with Accretion Disk") && world) {
         world->objects.clear();
-        // Add a black hole at the center
+        // Add a spinning black hole at the center
         Particle bh;
         bh.x = 0.0f; bh.y = 0.0f;
         bh.vx = 0.0f; bh.vy = 0.0f;
@@ -90,8 +142,9 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
         bh.eventHorizon = 0.09f;
         bh.absorption = 1.0f;
         bh.color = {0.1f, 0.1f, 0.1f};
+        bh.spin = 2.0f;
         world->addObject(bh);
-        // Add accretion disk (many small asteroids in orbit)
+        // Add accretion disk (many small asteroids in orbit, each with spin)
         for (int i = 0; i < 18; ++i) {
             float angle = i * (2.0f * 3.1415926f / 18);
             Particle ast;
@@ -105,6 +158,7 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
             ast.isStatic = false;
             ast.type = ObjectType::Asteroid;
             ast.color = {0.7f, 0.6f, 0.4f};
+            ast.spin = 3.0f * ((i % 2 == 0) ? 1.0f : -1.0f); // Alternate spin direction
             float v = sqrt(0.5f * bh.mass / std::max(ast.orbitRadius, 1e-4f));
             ast.vx = -v * sin(angle);
             ast.vy =  v * cos(angle);
@@ -143,6 +197,7 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
     static int selectedType = 0;
     static float px = 0.0f, py = 0.0f, pvx = 0.0f, pvy = 0.0f;
     static float pradius = 0.03f, pmass = 1.0f, pcharge = 0.0f;
+    static float pspin = 0.0f;
     static bool pisStatic = false;
     static float pcolor[3] = {1.0f, 0.0f, 0.0f};
     static float eventHorizon = 0.1f, luminosity = 0.0f, absorption = 1.0f;
@@ -159,6 +214,7 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
     ImGui::InputFloat("Charge", &pcharge);
     ImGui::Checkbox("Static", &pisStatic);
     ImGui::ColorEdit3("Color", pcolor);
+    ImGui::InputFloat("Spin (rad/s)", &pspin, 0.01f, 0.1f, "%.3f");
     if (selectedType == 1) { // BlackHole
         ImGui::InputFloat("Event Horizon", &eventHorizon);
         ImGui::InputFloat("Absorption", &absorption);
@@ -180,6 +236,7 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
         p.charge = pcharge;
         p.isStatic = pisStatic;
         p.color = {pcolor[0], pcolor[1], pcolor[2]};
+        p.spin = pspin;
         switch (selectedType) {
             case 0: p.type = ObjectType::Normal; break;
             case 1: p.type = ObjectType::BlackHole; p.eventHorizon = eventHorizon; p.absorption = absorption; break;
