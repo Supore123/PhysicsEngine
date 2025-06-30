@@ -1,3 +1,5 @@
+// Draw a 3D vector field (arrows) across the entire axis-aligned box
+void drawVectorField3D(float minX, float maxX, float minY, float maxY, float minZ, float maxZ, float spacing, void(*vecFunc)(float,float,float,float&,float&,float&));
 #pragma once
 #include <vector>
 #include <GL/glew.h>

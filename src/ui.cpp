@@ -13,8 +13,8 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
         world->objects.clear();
         // Add a central star (the Sun)
         Particle sun;
-        sun.x = 0.0f; sun.y = 0.0f;
-        sun.vx = 0.0f; sun.vy = 0.0f;
+        sun.x = 0.0f; sun.y = 0.0f; sun.z = 0.0f;
+        sun.vx = 0.0f; sun.vy = 0.0f; sun.vz = 0.0f;
         sun.radius = 0.08f;
         sun.mass = 20.0f;
         sun.isStatic = true;
@@ -22,74 +22,111 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
         sun.luminosity = 1.5f;
         sun.color = {1.0f, 0.9f, 0.2f};
         sun.spin = 1.0f;
+        sun.spinAxisX = 0.0f; sun.spinAxisY = 0.0f; sun.spinAxisZ = 1.0f;
         world->addObject(sun);
 
-        // Define planet parameters: {orbitRadius, radius, mass, color, spin}
-        struct PlanetDef { float orbitRadius, radius, mass, spin; Color3 color; };
-        std::vector<PlanetDef> planets = {
-            {0.13f, 0.018f, 0.3f, 3.0f, {0.7f, 0.7f, 0.7f}}, // Mercury
-            {0.17f, 0.022f, 0.6f, 2.5f, {0.9f, 0.7f, 0.4f}}, // Venus
-            {0.22f, 0.024f, 0.7f, 2.0f, {0.2f, 0.5f, 1.0f}}, // Earth
-            {0.28f, 0.020f, 0.5f, 2.2f, {1.0f, 0.4f, 0.2f}}, // Mars
-            {0.36f, 0.045f, 2.0f, 1.5f, {0.9f, 0.8f, 0.5f}}, // Jupiter
-            {0.44f, 0.038f, 1.5f, 1.2f, {0.8f, 0.9f, 0.7f}}, // Saturn
-            {0.52f, 0.030f, 1.0f, 1.0f, {0.5f, 0.8f, 1.0f}}, // Uranus
-            {0.60f, 0.028f, 0.8f, 0.8f, {0.4f, 0.7f, 1.0f}}  // Neptune
+        // Define planet parameters: {orbitRadius, radius, mass, color, spin, orbitInclination}
+        struct PlanetDef { float orbitRadius, radius, mass, spin, inclination; Color3 color; };
+        PlanetDef planets[] = {
+            {0.13f, 0.018f, 0.3f, 3.0f, 0.1f, {0.7f, 0.7f, 0.7f}}, // Mercury
+            {0.17f, 0.022f, 0.6f, 2.5f, 0.2f, {0.9f, 0.7f, 0.4f}}, // Venus
+            {0.22f, 0.024f, 0.7f, 2.0f, 0.0f, {0.2f, 0.5f, 1.0f}}, // Earth
+            {0.28f, 0.020f, 0.5f, 2.2f, 0.05f, {1.0f, 0.4f, 0.2f}}, // Mars
+            {0.36f, 0.045f, 2.0f, 1.5f, 0.3f, {0.9f, 0.8f, 0.5f}}, // Jupiter
+            {0.44f, 0.038f, 1.5f, 1.2f, 0.25f, {0.8f, 0.9f, 0.7f}}, // Saturn
+            {0.52f, 0.030f, 1.0f, 1.0f, 0.15f, {0.5f, 0.8f, 1.0f}}, // Uranus
+            {0.60f, 0.028f, 0.8f, 0.8f, 0.12f, {0.4f, 0.7f, 1.0f}}  // Neptune
         };
-        for (size_t i = 0; i < planets.size(); ++i) {
-            const auto& def = planets[i];
+        for (size_t i = 0; i < sizeof(planets)/sizeof(planets[0]); ++i) {
+            const PlanetDef& def = planets[i];
             Particle planet;
             planet.orbitTarget = 0; // Sun
             planet.orbitRadius = def.orbitRadius;
             planet.orbitAngle = float(i) * 0.7f; // Staggered starting positions
+            float inclination = def.inclination;
             planet.x = sun.x + planet.orbitRadius * cos(planet.orbitAngle);
-            planet.y = sun.y + planet.orbitRadius * sin(planet.orbitAngle);
+            planet.y = sun.y + planet.orbitRadius * sin(planet.orbitAngle) * cos(inclination);
+            planet.z = sun.z + planet.orbitRadius * sin(planet.orbitAngle) * sin(inclination);
             planet.radius = def.radius;
             planet.mass = def.mass;
             planet.isStatic = false;
             planet.type = ObjectType::Planet;
             planet.color = def.color;
             planet.spin = def.spin;
-            float v = sqrt(0.5f * sun.mass / std::max(planet.orbitRadius, 1e-4f));
+            planet.spinAxisX = 0.0f; planet.spinAxisY = 0.0f; planet.spinAxisZ = 1.0f;
+            float v = sqrtf(0.5f * sun.mass / ((planet.orbitRadius > 1e-4f) ? planet.orbitRadius : 1e-4f));
+            // 3D velocity: perpendicular to radius vector in orbital plane
             planet.vx = -v * sin(planet.orbitAngle);
-            planet.vy =  v * cos(planet.orbitAngle);
+            planet.vy =  v * cos(planet.orbitAngle) * cos(inclination);
+            planet.vz =  v * cos(planet.orbitAngle) * sin(inclination);
             world->addObject(planet);
         }
     }
+
     // --- Example Scenarios ---
     ImGui::Begin("Example Scenarios");
     if (ImGui::Button("Planet Orbiting Star") && world) {
-        world->objects.clear();
-        // Add a spinning star at the center
-        Particle star;
-        star.x = 0.0f; star.y = 0.0f;
-        star.vx = 0.0f; star.vy = 0.0f;
-        star.radius = 0.07f;
-        star.mass = 10.0f;
-        star.isStatic = true;
-        star.type = ObjectType::Star;
-        star.luminosity = 1.0f;
-        star.color = {1.0f, 0.9f, 0.2f};
-        star.spin = 1.2f; // Add visible spin
-        world->addObject(star);
-        // Add a planet in orbit with spin
-        Particle planet;
-        planet.orbitTarget = 0; // index of star
-        planet.orbitRadius = 0.35f;
-        planet.orbitAngle = 0.0f;
-        planet.x = star.x + planet.orbitRadius;
-        planet.y = star.y;
-        planet.radius = 0.03f;
-        planet.mass = 1.0f;
-        planet.isStatic = false;
-        planet.type = ObjectType::Planet;
-        planet.color = {0.2f, 0.5f, 1.0f};
-        planet.spin = 2.5f; // Add visible spin
-        float v = sqrt(0.5f * star.mass / std::max(planet.orbitRadius, 1e-4f));
-        planet.vx = 0.0f;
-        planet.vy = v;
-        world->addObject(planet);
-    }
+    world->objects.clear();
+    // Add a spinning star at the center (3D)
+    Particle star;
+    star.x = 0.0f; star.y = 0.0f; star.z = 0.0f;
+    star.vx = 0.0f; star.vy = 0.0f; star.vz = 0.0f;
+    star.radius = 0.07f;
+    star.mass = 10.0f;
+    star.isStatic = true;
+    star.type = ObjectType::Star;
+    star.luminosity = 1.0f;
+    star.color = {1.0f, 0.9f, 0.2f};
+    star.spin = 1.2f; // Add visible spin
+    star.spinAxisX = 0.0f; star.spinAxisY = 1.0f; star.spinAxisZ = 0.0f;
+    world->addObject(star);
+    // Add a planet in 3D orbit with spin and inclination
+    Particle planet;
+    planet.orbitTarget = 0; // index of star
+    planet.orbitRadius = 0.35f;
+    planet.orbitAngle = 0.0f;
+    float inclination = 0.4f; // radians, for 3D tilt
+    planet.x = star.x + planet.orbitRadius * cos(planet.orbitAngle);
+    planet.y = star.y + planet.orbitRadius * sin(planet.orbitAngle) * cos(inclination);
+    planet.z = star.z + planet.orbitRadius * sin(planet.orbitAngle) * sin(inclination);
+    planet.radius = 0.03f;
+    planet.mass = 1.0f;
+    planet.isStatic = false;
+    planet.type = ObjectType::Planet;
+    planet.color = {0.2f, 0.5f, 1.0f};
+    planet.spin = 2.5f; // Add visible spin
+    planet.spinAxisX = 0.0f; planet.spinAxisY = 1.0f; planet.spinAxisZ = 0.0f;
+    float v = sqrt(0.5f * star.mass / std::max(planet.orbitRadius, 1e-4f));
+    // 3D velocity: perpendicular to radius vector in orbital plane
+    planet.vx = -v * sin(planet.orbitAngle);
+    planet.vy =  v * cos(planet.orbitAngle) * cos(inclination);
+    planet.vz =  v * cos(planet.orbitAngle) * sin(inclination);
+    world->addObject(planet);
+
+    // Add a moon orbiting the planet (properly in the planet's 3D reference frame)
+    Particle moon;
+    moon.orbitTarget = 1; // index of planet
+    moon.orbitRadius = 0.08f;
+    moon.orbitAngle = 0.0f;
+    float moonIncl = 0.7f;
+    // Place moon at correct position relative to planet
+    moon.x = planet.x + moon.orbitRadius * cos(moon.orbitAngle);
+    moon.y = planet.y + moon.orbitRadius * sin(moon.orbitAngle) * cos(moonIncl);
+    moon.z = planet.z + moon.orbitRadius * sin(moon.orbitAngle) * sin(moonIncl);
+    moon.radius = 0.012f;
+    moon.mass = 0.1f;
+    moon.isStatic = false;
+    moon.type = ObjectType::Asteroid; // Or define ObjectType::Moon if you wish
+    moon.color = {0.8f, 0.8f, 0.8f};
+    moon.spin = 1.0f;
+    moon.spinAxisX = 0.0f; moon.spinAxisY = 1.0f; moon.spinAxisZ = 0.0f;
+    // Calculate moon's velocity: planet's velocity + orbital velocity around planet (3D)
+    float vm = sqrt(0.5f * planet.mass / std::max(moon.orbitRadius, 1e-4f));
+    moon.vx = planet.vx - vm * sin(moon.orbitAngle);
+    moon.vy = planet.vy + vm * cos(moon.orbitAngle) * cos(moonIncl);
+    moon.vz = planet.vz + vm * cos(moon.orbitAngle) * sin(moonIncl);
+    world->addObject(moon);
+}
 
     if (ImGui::Button("Binary Star System") && world) {
         world->objects.clear();
@@ -180,24 +217,27 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
     ImGui::SliderFloat("Time Scale", &state.timeScale, 0.01f, 2.0f, "%.2fx");
     ImGui::Checkbox("Show Trails", &state.showTrails);
     ImGui::Checkbox("Show Labels", &state.showLabels);
-    ImGui::Checkbox("Show Field", &state.showField);
+    ImGui::Checkbox("Show Field (XY plane)", &state.showField);
+    ImGui::Checkbox("Show 3D Vector Field (all axes)", &state.showField3D);
     ImGui::Checkbox("Show Axes", &state.showAxes);
     ImGui::Checkbox("Paused", &state.paused);
     ImGui::Separator();
     // --- Diagnostics: Energy and Momentum ---
     if (world) {
         float ke = world->totalKineticEnergy();
-        float px = 0.0f, py = 0.0f;
-        world->totalMomentum(px, py);
+        float px = 0.0f, py = 0.0f, pz = 0.0f;
+        world->totalMomentum(px, py, pz);
         ImGui::Text("Kinetic Energy: %.3f", ke);
-        ImGui::Text("Momentum: (%.3f, %.3f)", px, py);
+        ImGui::Text("Momentum: (%.3f, %.3f, %.3f)", px, py, pz);
     }
     ImGui::Separator();
     // --- ImGui controls for creating new particles ---
     static int selectedType = 0;
-    static float px = 0.0f, py = 0.0f, pvx = 0.0f, pvy = 0.0f;
+    static float px = 0.0f, py = 0.0f, pz = 0.0f;
+    static float pvx = 0.0f, pvy = 0.0f, pvz = 0.0f;
     static float pradius = 0.03f, pmass = 1.0f, pcharge = 0.0f;
     static float pspin = 0.0f;
+    static float pspinAxis[3] = {0.0f, 0.0f, 1.0f};
     static bool pisStatic = false;
     static float pcolor[3] = {1.0f, 0.0f, 0.0f};
     static float eventHorizon = 0.1f, luminosity = 0.0f, absorption = 1.0f;
@@ -207,14 +247,15 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
     ImGui::Text("Create New Object");
     const char* typeNames[] = {"Normal", "BlackHole", "Star", "Planet", "Asteroid"};
     ImGui::Combo("Type", &selectedType, typeNames, IM_ARRAYSIZE(typeNames));
-    ImGui::InputFloat2("Position (x, y)", &px);
-    ImGui::InputFloat2("Velocity (vx, vy)", &pvx);
+    ImGui::InputFloat3("Position (x, y, z)", &px);
+    ImGui::InputFloat3("Velocity (vx, vy, vz)", &pvx);
     ImGui::InputFloat("Radius", &pradius);
     ImGui::InputFloat("Mass", &pmass);
     ImGui::InputFloat("Charge", &pcharge);
     ImGui::Checkbox("Static", &pisStatic);
     ImGui::ColorEdit3("Color", pcolor);
     ImGui::InputFloat("Spin (rad/s)", &pspin, 0.01f, 0.1f, "%.3f");
+    ImGui::InputFloat3("Spin Axis (x, y, z)", pspinAxis);
     if (selectedType == 1) { // BlackHole
         ImGui::InputFloat("Event Horizon", &eventHorizon);
         ImGui::InputFloat("Absorption", &absorption);
@@ -229,14 +270,17 @@ void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
     }
     if (ImGui::Button("Add Object") && world) {
         Particle p;
-        p.x = px; p.y = py;
-        p.vx = pvx; p.vy = pvy;
+        p.x = px; p.y = py; p.z = pz;
+        p.vx = pvx; p.vy = pvy; p.vz = pvz;
         p.radius = pradius;
         p.mass = pmass;
         p.charge = pcharge;
         p.isStatic = pisStatic;
         p.color = {pcolor[0], pcolor[1], pcolor[2]};
         p.spin = pspin;
+        p.spinAxisX = pspinAxis[0];
+        p.spinAxisY = pspinAxis[1];
+        p.spinAxisZ = pspinAxis[2];
         switch (selectedType) {
             case 0: p.type = ObjectType::Normal; break;
             case 1: p.type = ObjectType::BlackHole; p.eventHorizon = eventHorizon; p.absorption = absorption; break;

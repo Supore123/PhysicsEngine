@@ -8,19 +8,23 @@ class PhysicsWorld {
 public:
     std::vector<PhysicsObject> objects;
     float gravity = 0.0f;
-    // Boundaries (walls/floor/ceiling) in normalized device coordinates
-    float left = -1.0f;
-    float right = 1.0f;
-    float bottom = -1.0f;
-    float top = 1.0f;
+    // Boundaries (walls/floor/ceiling/front/back) in world coordinates
+    float left = -10.0f;
+    float right = 10.0f;
+    float bottom = -10.0f;
+    float top = 10.0f;
+    float front = -10.0f;
+    float back = 10.0f;
 
-    // --- Spatial Partitioning (Uniform Grid) ---
+    // --- Spatial Partitioning (Uniform 3D Grid) ---
     int gridRows = 20;
     int gridCols = 20;
-    float cellWidth = 0.1f;
-    float cellHeight = 0.1f;
+    int gridSlices = 20;
+    float cellWidth = 1.0f;
+    float cellHeight = 1.0f;
+    float cellDepth = 1.0f;
     // Each cell contains indices of objects in that cell
-    std::vector<std::vector<std::vector<size_t>>> gridCells;
+    std::vector<std::vector<std::vector<std::vector<size_t>>>> gridCells;
 
     // Call before collision detection each step
     void updateSpatialGrid();
@@ -32,5 +36,5 @@ public:
     void applyGravityForces();
     // Diagnostics: Energy and Momentum
     float totalKineticEnergy() const;
-    void totalMomentum(float& px, float& py) const;
+    void totalMomentum(float& px, float& py, float& pz) const;
 };

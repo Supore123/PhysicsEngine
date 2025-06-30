@@ -31,7 +31,24 @@ add_executable(PhysicsEngine ${ALL_SOURCES})
 target_include_directories(PhysicsEngine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc)
 
 # Link required libraries
+
+# Find OpenGL and GLU
 find_package(OpenGL REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
+
+# Try to find GLU, fallback to manual linking if not found
+find_path(GLU_INCLUDE_DIR GL/glu.h)
+find_library(GLU_LIBRARY NAMES GLU glu32)
+if(GLU_INCLUDE_DIR AND GLU_LIBRARY)
+    message(STATUS "Found GLU: ${GLU_LIBRARY}")
+    target_include_directories(PhysicsEngine PRIVATE ${GLU_INCLUDE_DIR})
+    target_link_libraries(PhysicsEngine PRIVATE ${GLU_LIBRARY})
+else()
+    message(WARNING "GLU not found! 3D sphere rendering will not work.")
+endif()
+
+target_link_libraries(PhysicsEngine PRIVATE OpenGL::GL glfw GLEW)
 find_package(glfw3 REQUIRED)
 target_link_libraries(PhysicsEngine PRIVATE OpenGL::GL glfw GLEW)
 

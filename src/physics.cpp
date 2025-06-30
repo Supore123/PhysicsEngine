@@ -10,21 +10,22 @@ float PhysicsWorld::totalKineticEnergy() const {
     float ke = 0.0f;
     for (const auto& obj : this->objects) {
         if (!obj.isStatic) {
-            if (obj.mass > 0 && std::isfinite(obj.vx) && std::isfinite(obj.vy)) {
-                ke += 0.5f * obj.mass * (obj.vx * obj.vx + obj.vy * obj.vy);
+            if (obj.mass > 0 && std::isfinite(obj.vx) && std::isfinite(obj.vy) && std::isfinite(obj.vz)) {
+                ke += 0.5f * obj.mass * (obj.vx * obj.vx + obj.vy * obj.vy + obj.vz * obj.vz);
             }
         }
     }
     return ke;
 }
 
-void PhysicsWorld::totalMomentum(float& px, float& py) const {
-    px = 0.0f; py = 0.0f;
+void PhysicsWorld::totalMomentum(float& px, float& py, float& pz) const {
+    px = 0.0f; py = 0.0f; pz = 0.0f;
     for (const auto& obj : this->objects) {
         if (!obj.isStatic) {
-            if (obj.mass > 0 && std::isfinite(obj.vx) && std::isfinite(obj.vy)) {
+            if (obj.mass > 0 && std::isfinite(obj.vx) && std::isfinite(obj.vy) && std::isfinite(obj.vz)) {
                 px += obj.mass * obj.vx;
                 py += obj.mass * obj.vy;
+                pz += obj.mass * obj.vz;
             }
         }
     }
@@ -36,8 +37,9 @@ void PhysicsWorld::addObject(const PhysicsObject& obj) {
     for (const auto& existing : objects) {
         float dx = obj.x - existing.x;
         float dy = obj.y - existing.y;
+        float dz = obj.z - existing.z;
         float minDist = obj.radius + existing.radius;
-        if ((dx * dx + dy * dy) < (minDist * minDist)) {
+        if ((dx * dx + dy * dy + dz * dz) < (minDist * minDist)) {
             // Overlap detected, do not spawn
             return;
         }
@@ -50,7 +52,7 @@ void PhysicsWorld::step(float dt) {
     // (Simple: substep if any particle would move more than its radius in one step)
     float maxMove = 0.0f;
     for (const auto& obj : objects) {
-        float move = std::sqrt(obj.vx * obj.vx + obj.vy * obj.vy) * dt;
+        float move = std::sqrt(obj.vx * obj.vx + obj.vy * obj.vy + obj.vz * obj.vz) * dt;
         if (move > maxMove) maxMove = move;
     }
     int substeps = std::max(1, int(std::ceil(maxMove / 0.5f / dt)));
@@ -103,12 +105,25 @@ void PhysicsWorld::step(float dt) {
                 const auto& target = objects[obj.orbitTarget];
                 float angle = obj.orbitAngle;
                 float r = obj.orbitRadius;
+                // Use inclination if set, otherwise default to 0
+                float inclination = 0.0f;
+                if (obj.spinAxisX != 0.0f || obj.spinAxisY != 0.0f || obj.spinAxisZ != 1.0f) {
+                    // If spin axis is not default, use its direction for inclination (approximate)
+                    inclination = std::atan2(obj.spinAxisZ, obj.spinAxisY);
+                } else if (obj.orbitTarget == 0 && objects.size() > 1) {
+                    // Try to infer inclination from initial z offset
+                    float dz = obj.z - target.z;
+                    float dr = std::sqrt((obj.x - target.x)*(obj.x - target.x) + (obj.y - target.y)*(obj.y - target.y) + dz*dz);
+                    if (dr > 1e-6f) inclination = std::asin(dz / dr);
+                }
                 obj.x = target.x + r * std::cos(angle);
-                obj.y = target.y + r * std::sin(angle);
-                // Set velocity for circular orbit (approximate)
+                obj.y = target.y + r * std::sin(angle) * std::cos(inclination);
+                obj.z = target.z + r * std::sin(angle) * std::sin(inclination);
+                // Set velocity for circular orbit (approximate, in 3D orbital plane)
                 float v = std::sqrt(0.5f * target.mass / std::max(r, 1e-4f));
                 obj.vx = -v * std::sin(angle) + target.vx;
-                obj.vy =  v * std::cos(angle) + target.vy;
+                obj.vy =  v * std::cos(angle) * std::cos(inclination) + target.vy;
+                obj.vz =  v * std::cos(angle) * std::sin(inclination) + target.vz;
                 // Advance orbit angle
                 obj.orbitAngle += 0.01f; // Speed can be parameterized
             }
@@ -160,15 +175,18 @@ void PhysicsWorld::applyGravityForces() {
             if (a.isStatic || b.isStatic) continue; // Don't attract or be attracted if static
             float dx = b.x - a.x;
             float dy = b.y - a.y;
-            float distSq = dx * dx + dy * dy;
+            float dz = b.z - a.z;
+            float distSq = dx * dx + dy * dy + dz * dz;
             if (distSq < 1e-8f) continue; // Avoid division by zero and self-attraction
             float dist = std::sqrt(distSq) + 1e-6f;
             // F = G * m1 * m2 / r^2
             float F = G * a.mass * b.mass / distSq;
             float ax = F * dx / (dist * a.mass);
             float ay = F * dy / (dist * a.mass);
+            float az = F * dz / (dist * a.mass);
             a.vx += ax * 0.001f; // Reduce fudge factor for stability
             a.vy += ay * 0.001f;
+            a.vz += az * 0.001f;
         }
     }
 }
@@ -196,6 +214,16 @@ void PhysicsWorld::handleWalls() {
             obj.y = top - obj.radius;
             obj.vy = -obj.vy * wallDamping;
         }
+        // Front wall
+        if (obj.z - obj.radius < front) {
+            obj.z = front + obj.radius;
+            obj.vz = -obj.vz * wallDamping;
+        }
+        // Back wall
+        if (obj.z + obj.radius > back) {
+            obj.z = back - obj.radius;
+            obj.vz = -obj.vz * wallDamping;
+        }
     }
 }
 
@@ -205,70 +233,79 @@ void PhysicsWorld::handleCollisions() {
     const float restitution = 0.95f;
     const float percent = 0.2f;
     const float slop = 1e-4f;
-    // No object creation from collisions or interactions
     std::vector<std::pair<size_t, size_t>> checkedPairs;
-    // Only check collisions within each cell and neighboring cells
     for (int row = 0; row < gridRows; ++row) {
         for (int col = 0; col < gridCols; ++col) {
-            for (int di = -1; di <= 1; ++di) {
-                for (int dj = -1; dj <= 1; ++dj) {
-                    int nrow = row + di;
-                    int ncol = col + dj;
-                    if (nrow < 0 || nrow >= gridRows || ncol < 0 || ncol >= gridCols) continue;
-                    const auto& cellA = gridCells[row][col];
-                    const auto& cellB = gridCells[nrow][ncol];
-                    for (size_t idxA = 0; idxA < cellA.size(); ++idxA) {
-                        for (size_t idxB = 0; idxB < cellB.size(); ++idxB) {
-                            size_t i = cellA[idxA];
-                            size_t j = cellB[idxB];
-                            if (i >= j) continue; // avoid double check and self
-                            // Avoid duplicate checks
-                            if (std::find(checkedPairs.begin(), checkedPairs.end(), std::make_pair(i, j)) != checkedPairs.end()) continue;
-                            checkedPairs.push_back({i, j});
-                            PhysicsObject& a = objects[i];
-                            PhysicsObject& b = objects[j];
-                            if (a.isStatic && b.isStatic) continue;
-                            float dx = b.x - a.x;
-                            float dy = b.y - a.y;
-                            float distSq = dx * dx + dy * dy;
-                            float minDist = a.radius + b.radius;
-                            if (distSq < minDist * minDist) {
-                                float dist = std::sqrt(distSq) + 1e-8f;
-                                float nx = dx / dist;
-                                float ny = dy / dist;
-                                // --- Elastic collision (impulse-based) ---
-                                float ma = a.isStatic ? 1e10f : a.mass;
-                                float mb = b.isStatic ? 1e10f : b.mass;
-                                float penetration = minDist - dist;
-                                float correction = std::max(penetration - slop, 0.0f) / (ma + mb) * percent;
-                                if (!a.isStatic && !b.isStatic) {
-                                    a.x -= nx * correction * (mb / (ma + mb));
-                                    a.y -= ny * correction * (mb / (ma + mb));
-                                    b.x += nx * correction * (ma / (ma + mb));
-                                    b.y += ny * correction * (ma / (ma + mb));
-                                } else if (!a.isStatic) {
-                                    a.x -= nx * correction;
-                                    a.y -= ny * correction;
-                                } else if (!b.isStatic) {
-                                    b.x += nx * correction;
-                                    b.y += ny * correction;
-                                }
-                                float vax = a.vx, vay = a.vy;
-                                float vbx = b.vx, vby = b.vy;
-                                float van = vax * nx + vay * ny;
-                                float vbn = vbx * nx + vby * ny;
-                                float relVel = van - vbn;
-                                if (relVel < 0.0f) continue;
-                                float impulse = -(1.0f + restitution) * relVel / (1.0f / ma + 1.0f / mb);
-                                float impA = impulse / ma;
-                                float impB = impulse / mb;
-                                if (!a.isStatic) {
-                                    a.vx += impA * nx;
-                                    a.vy += impA * ny;
-                                }
-                                if (!b.isStatic) {
-                                    b.vx -= impB * nx;
-                                    b.vy -= impB * ny;
+            for (int slice = 0; slice < gridSlices; ++slice) {
+                for (int di = -1; di <= 1; ++di) {
+                    for (int dj = -1; dj <= 1; ++dj) {
+                        for (int dk = -1; dk <= 1; ++dk) {
+                            int nrow = row + di;
+                            int ncol = col + dj;
+                            int nslice = slice + dk;
+                            if (nrow < 0 || nrow >= gridRows || ncol < 0 || ncol >= gridCols || nslice < 0 || nslice >= gridSlices) continue;
+                            const auto& cellA = gridCells[row][col][slice];
+                            const auto& cellB = gridCells[nrow][ncol][nslice];
+                            for (size_t idxA = 0; idxA < cellA.size(); ++idxA) {
+                                for (size_t idxB = 0; idxB < cellB.size(); ++idxB) {
+                                    size_t i = cellA[idxA];
+                                    size_t j = cellB[idxB];
+                                    if (i >= j) continue;
+                                    if (std::find(checkedPairs.begin(), checkedPairs.end(), std::make_pair(i, j)) != checkedPairs.end()) continue;
+                                    checkedPairs.push_back({i, j});
+                                    PhysicsObject& a = objects[i];
+                                    PhysicsObject& b = objects[j];
+                                    if (a.isStatic && b.isStatic) continue;
+                                    float dx = b.x - a.x;
+                                    float dy = b.y - a.y;
+                                    float dz = b.z - a.z;
+                                    float distSq = dx * dx + dy * dy + dz * dz;
+                                    float minDist = a.radius + b.radius;
+                                    if (distSq < minDist * minDist) {
+                                        float dist = std::sqrt(distSq) + 1e-8f;
+                                        float nx = dx / dist;
+                                        float ny = dy / dist;
+                                        float nz = dz / dist;
+                                        float ma = a.isStatic ? 1e10f : a.mass;
+                                        float mb = b.isStatic ? 1e10f : b.mass;
+                                        float penetration = minDist - dist;
+                                        float correction = std::max(penetration - slop, 0.0f) / (ma + mb) * percent;
+                                        if (!a.isStatic && !b.isStatic) {
+                                            a.x -= nx * correction * (mb / (ma + mb));
+                                            a.y -= ny * correction * (mb / (ma + mb));
+                                            a.z -= nz * correction * (mb / (ma + mb));
+                                            b.x += nx * correction * (ma / (ma + mb));
+                                            b.y += ny * correction * (ma / (ma + mb));
+                                            b.z += nz * correction * (ma / (ma + mb));
+                                        } else if (!a.isStatic) {
+                                            a.x -= nx * correction;
+                                            a.y -= ny * correction;
+                                            a.z -= nz * correction;
+                                        } else if (!b.isStatic) {
+                                            b.x += nx * correction;
+                                            b.y += ny * correction;
+                                            b.z += nz * correction;
+                                        }
+                                        float vax = a.vx, vay = a.vy, vaz = a.vz;
+                                        float vbx = b.vx, vby = b.vy, vbz = b.vz;
+                                        float van = vax * nx + vay * ny + vaz * nz;
+                                        float vbn = vbx * nx + vby * ny + vbz * nz;
+                                        float relVel = van - vbn;
+                                        if (relVel < 0.0f) continue;
+                                        float impulse = -(1.0f + restitution) * relVel / (1.0f / ma + 1.0f / mb);
+                                        float impA = impulse / ma;
+                                        float impB = impulse / mb;
+                                        if (!a.isStatic) {
+                                            a.vx += impA * nx;
+                                            a.vy += impA * ny;
+                                            a.vz += impA * nz;
+                                        }
+                                        if (!b.isStatic) {
+                                            b.vx -= impB * nx;
+                                            b.vy -= impB * ny;
+                                            b.vz -= impB * nz;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -281,19 +318,20 @@ void PhysicsWorld::handleCollisions() {
 }
 
 void PhysicsWorld::updateSpatialGrid() {
-    // Compute cell size based on bounds and grid size
+    // Compute cell size based on bounds and grid size (3D grid)
     cellWidth = (right - left) / gridCols;
     cellHeight = (top - bottom) / gridRows;
-    // Resize grid
-    gridCells.assign(gridRows, std::vector<std::vector<size_t>>(gridCols));
-    // Assign each object to a cell
+    cellDepth = (back - front) / gridSlices;
+    gridCells.assign(gridRows, std::vector<std::vector<std::vector<size_t>>>(gridCols, std::vector<std::vector<size_t>>(gridSlices)));
     for (size_t i = 0; i < objects.size(); ++i) {
         const auto& obj = objects[i];
         int col = static_cast<int>((obj.x - left) / cellWidth);
         int row = static_cast<int>((obj.y - bottom) / cellHeight);
+        int slice = static_cast<int>((obj.z - front) / cellDepth);
         // Clamp to grid
         col = std::max(0, std::min(gridCols - 1, col));
         row = std::max(0, std::min(gridRows - 1, row));
-        gridCells[row][col].push_back(i);
+        slice = std::max(0, std::min(gridSlices - 1, slice));
+        gridCells[row][col][slice].push_back(i);
     }
 }

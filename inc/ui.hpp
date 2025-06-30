@@ -9,6 +9,7 @@ struct UIState {
     bool showTrails = true;
     bool showLabels = true;
     bool showField = true;
+    bool showField3D = true;
     bool showAxes = true;
     bool paused = false;
 };
@@ -16,3 +17,6 @@ struct UIState {
 // Now takes PhysicsWorld* for diagnostics display
 class PhysicsWorld;
 void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world);
+// Modularized scenario helpers
+void addCentralStar(PhysicsWorld* world);
+void addSolarSystemPlanets(PhysicsWorld* world);

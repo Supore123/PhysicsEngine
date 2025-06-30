@@ -43,8 +43,8 @@ enum class ObjectType {
  *  - orbitRadius, orbitAngle, orbitTarget: For Planet orbits
  */
 struct Particle {
-    float x, y;
-    float vx, vy;
+    float x, y, z;
+    float vx, vy, vz;
     float radius;
     float mass;
     float charge = 0.0f;
@@ -59,9 +59,12 @@ struct Particle {
     float orbitRadius = 0.0f;  // For Planet: for scenario setup
     float orbitAngle = 0.0f;   // For Planet: for scenario setup
     int orbitTarget = -1;      // Index of object being orbited (if any)
-    // Visual rotation
-    float spin = 0.0f;         // Angular velocity (radians per step)
+    // Visual rotation (3D)
+    float spin = 0.0f;         // Angular speed (radians per step)
     float spinAngle = 0.0f;    // Current orientation (radians)
+    float spinAxisX = 0.0f;    // 3D spin axis (normalized)
+    float spinAxisY = 0.0f;
+    float spinAxisZ = 1.0f;
     // You can add more as needed
 };
 

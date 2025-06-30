@@ -4,10 +4,35 @@
 #include <vector>
 #include <cstdio>
 #include <cmath>
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include "camera.hpp"
+#include "glm_compat.hpp"
+#include "ui.hpp"
+#include "render_utils.hpp"
 
-void renderLoop(GLFWwindow* window, GLuint gridProgram, GLuint gridVAO, int gridVertexCount, GLuint axisProgram, GLuint axisVAO, int axisVertexCount, GridRenderer& gridRenderer, PhysicsWorld& world, GLuint pointProgram) {
+
+// Global pointer for field computation
+static PhysicsWorld* g_world = nullptr;
+extern "C" void computeFieldAtPoint(float x, float y, float z, float& vx, float& vy, float& vz) {
+    vx = 0.0f; vy = 0.0f; vz = 0.0f;
+    if (!g_world) return;
+    for (const auto& obj : g_world->objects) {
+        float dx = obj.x - x;
+        float dy = obj.y - y;
+        float dz = obj.z - z;
+        float distSq = dx*dx + dy*dy + dz*dz + 1e-4f;
+        float dist = sqrtf(distSq);
+        float strength = obj.mass / distSq;
+        vx += strength * dx / dist;
+        vy += strength * dy / dist;
+        vz += strength * dz / dist;
+    }
+}
+
+void renderLoop(GLFWwindow* window, GLuint gridProgram, GLuint gridVAO, int gridVertexCount, GLuint axisProgram, GLuint axisVAO, int axisVertexCount, GridRenderer& gridRenderer, PhysicsWorld& world, GLuint pointProgram, const Camera3D& camera, UIState& uiState) {
+    g_world = &world;
     // Debug: Print each frame to confirm rendering
     static int frameCount = 0;
     if (frameCount++ % 60 == 0) {
@@ -21,142 +46,103 @@ void renderLoop(GLFWwindow* window, GLuint gridProgram, GLuint gridVAO, int grid
     glBindFramebuffer(GL_FRAMEBUFFER, 0); // Default framebuffer
     glUseProgram(0); // Unbind any custom shader (will be set below)
     glBindVertexArray(0); // Unbind any VAO (will be set below)
-    glDisable(GL_DEPTH_TEST); // 2D rendering
-    glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST); // Enable depth for 3D
+    glEnable(GL_CULL_FACE); // Enable culling for 3D
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_ADD);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    GLint colorLoc = glGetUniformLocation(axisProgram, "color");
-    static GLint pointColorLoc = -1;
-    // Draw axes in red
+
+    // --- Camera setup (modern OpenGL) ---
+    // Compute view and projection matrices (right-handed, Y up)
+    float aspect = (float)fbWidth / (float)fbHeight;
+    float camX, camY, camZ;
+    camera.getPosition(camX, camY, camZ);
+    vec3 eye(camX, camY, camZ);
+    vec3 center(camera.targetX, camera.targetY, camera.targetZ);
+    vec3 up(0.0f, 1.0f, 0.0f);
+    mat4 view = lookAt(eye, center, up);
+    mat4 proj = perspective(camera.fov, aspect, 0.01f, 100.0f);
+
+    // Draw 3D axis indicator at origin using modern OpenGL (axis VAO/VBO, axisProgram)
     glUseProgram(axisProgram);
-    glUniform3f(colorLoc, 0.8f, 0.0f, 0.0f);
-    gridRenderer.drawAxes(axisProgram, axisVAO, axisVertexCount);
-    // Draw field (field arrows set their own color)
-    gridRenderer.drawField(world, axisProgram, colorLoc);
-    // Draw physics objects as circular points (point masses) in red
-    glUseProgram(pointProgram);
-    if (pointColorLoc == -1) pointColorLoc = glGetUniformLocation(pointProgram, "color");
-    float minMass, maxMass;
-    ParticleUtils::computeMassRange(world.objects, minMass, maxMass);
-    for (size_t i = 0; i < world.objects.size(); ++i) {
-        const auto& obj = world.objects[i];
-        Color3 color = obj.color;
-        float size = obj.radius * 600.0f;
-        bool customDraw = false;
-        // --- Visual rotation: draw orientation marker if spinAngle is nonzero ---
-        auto drawOrientationMarker = [&](const Particle& p, float markerLen, float markerWidth, const Color3& markerColor) {
-            if (std::abs(p.spin) > 1e-6f || std::abs(p.spinAngle) > 1e-6f) {
-                float angle = p.spinAngle;
-                float x1 = p.x + std::cos(angle) * (p.radius + markerLen);
-                float y1 = p.y + std::sin(angle) * (p.radius + markerLen);
-                float x0 = p.x + std::cos(angle) * p.radius;
-                float y0 = p.y + std::sin(angle) * p.radius;
-                glUseProgram(axisProgram);
-                glUniform3f(colorLoc, markerColor.r, markerColor.g, markerColor.b);
-                glLineWidth(markerWidth);
-                glBegin(GL_LINES);
-                glVertex2f(x0, y0);
-                glVertex2f(x1, y1);
-                glEnd();
-                glLineWidth(1.0f);
-            }
-        };
-        // Visually distinct rendering for each type
-        switch (obj.type) {
-            case ObjectType::BlackHole:
-                // Draw event horizon as a thick dark ring
-                glUseProgram(pointProgram);
-                glUniform3f(pointColorLoc, 0.1f, 0.1f, 0.1f);
-                glPointSize(obj.eventHorizon * 1200.0f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                // Draw core as a smaller dark circle
-                glUniform3f(pointColorLoc, 0.2f, 0.2f, 0.2f);
-                glPointSize(obj.radius * 600.0f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                // Draw orientation marker for spin
-                drawOrientationMarker(obj, obj.radius * 0.7f, 3.0f, {0.8f, 0.2f, 0.2f});
-                customDraw = true;
-                break;
-            case ObjectType::Star:
-                // Draw a glowing star (core + outer glow)
-                glUseProgram(pointProgram);
-                glUniform3f(pointColorLoc, color.r, color.g, color.b);
-                glPointSize(size * 2.0f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                glUniform3f(pointColorLoc, 1.0f, 1.0f, 0.6f);
-                glPointSize(size * 1.2f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                glUniform3f(pointColorLoc, color.r, color.g, color.b);
-                glPointSize(size);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                drawOrientationMarker(obj, obj.radius * 1.2f, 2.0f, {1.0f, 0.8f, 0.2f});
-                customDraw = true;
-                break;
-            case ObjectType::Planet:
-                // Draw planet with a colored ring for orbit
-                glUseProgram(pointProgram);
-                glUniform3f(pointColorLoc, 0.7f, 0.7f, 0.7f);
-                glPointSize(size * 1.5f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                glUniform3f(pointColorLoc, color.r, color.g, color.b);
-                glPointSize(size);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                drawOrientationMarker(obj, obj.radius * 1.1f, 2.0f, {0.2f, 0.8f, 1.0f});
-                customDraw = true;
-                break;
-            case ObjectType::Asteroid:
-                // Draw asteroid as a small brown/gray point
-                glUseProgram(pointProgram);
-                glUniform3f(pointColorLoc, color.r * 0.7f, color.g * 0.6f, color.b * 0.5f);
-                glPointSize(size * 0.8f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                drawOrientationMarker(obj, obj.radius * 0.7f, 1.5f, {0.7f, 0.7f, 0.7f});
-                customDraw = true;
-                break;
-            case ObjectType::Merged:
-                // Draw merged as cyan with a white outline
-                glUseProgram(pointProgram);
-                glUniform3f(pointColorLoc, 1.0f, 1.0f, 1.0f);
-                glPointSize(size * 1.3f);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                glUniform3f(pointColorLoc, 0.2f, 0.8f, 1.0f);
-                glPointSize(size);
-                glBegin(GL_POINTS);
-                glVertex2f(obj.x, obj.y);
-                glEnd();
-                drawOrientationMarker(obj, obj.radius * 1.0f, 2.0f, {0.2f, 1.0f, 1.0f});
-                customDraw = true;
-                break;
-            default:
-                break;
-        }
-        if (!customDraw) {
-            glUseProgram(pointProgram);
-            glUniform3f(pointColorLoc, color.r, color.g, color.b);
-            glPointSize(size);
-            glBegin(GL_POINTS);
-            glVertex2f(obj.x, obj.y);
-            glEnd();
-            drawOrientationMarker(obj, obj.radius * 1.0f, 2.0f, {1.0f, 1.0f, 1.0f});
-        }
+    GLint viewLoc = glGetUniformLocation(axisProgram, "view");
+    GLint projLoc = glGetUniformLocation(axisProgram, "proj");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, &view.m[0]);
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, &proj.m[0]);
+    glBindVertexArray(axisVAO);
+    glDrawArrays(GL_LINES, 0, 6);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    // Draw grid and field using modern OpenGL (if needed)
+    // Optionally, update view/proj matrices if camera moved (already done above)
+    // Draw vector field using the computeFieldAtPoint function
+    if (uiState.showField3D) {
+        glUseProgram(axisProgram);
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, &view.m[0]);
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, &proj.m[0]);
+        drawVectorField3D(-2.0f, 2.0f, -2.0f, 2.0f, -2.0f, 2.0f, 0.4f, computeFieldAtPoint);
+        glUseProgram(0);
     }
+
+    // --- Draw particles/objects as GL_POINTS ---
+    if (!world.objects.empty()) {
+        glUseProgram(pointProgram);
+        GLint viewLocPt = glGetUniformLocation(pointProgram, "view");
+        GLint projLocPt = glGetUniformLocation(pointProgram, "proj");
+        glUniformMatrix4fv(viewLocPt, 1, GL_FALSE, &view.m[0]);
+        glUniformMatrix4fv(projLocPt, 1, GL_FALSE, &proj.m[0]);
+        // Prepare positions, radii, and colors, scale radii for visual clarity
+        std::vector<float> positions;
+        std::vector<float> radii;
+        std::vector<float> colors;
+        for (const auto& obj : world.objects) {
+            positions.push_back(obj.x);
+            positions.push_back(obj.y);
+            positions.push_back(obj.z);
+            float visualScale = 1.0f;
+            switch (obj.type) {
+                case ObjectType::Star:
+                    // Make the sun (star at origin) much larger for visibility
+                    if (std::abs(obj.x) < 1e-4f && std::abs(obj.y) < 1e-4f && std::abs(obj.z) < 1e-4f) {
+                        visualScale = 7.0f;
+                    } else {
+                        visualScale = 2.2f;
+                    }
+                    break;
+                case ObjectType::BlackHole: visualScale = 2.5f; break;
+                case ObjectType::Planet: visualScale = 1.5f; break;
+                case ObjectType::Asteroid: visualScale = 1.1f; break;
+                default: visualScale = 1.0f; break;
+            }
+            radii.push_back(obj.radius * visualScale);
+            colors.push_back(obj.color.r);
+            colors.push_back(obj.color.g);
+            colors.push_back(obj.color.b);
+        }
+        GLuint VAO, VBO[3];
+        glGenVertexArrays(1, &VAO);
+        glGenBuffers(3, VBO);
+        glBindVertexArray(VAO);
+        // Position attribute
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[0]);
+        glBufferData(GL_ARRAY_BUFFER, positions.size() * sizeof(float), positions.data(), GL_DYNAMIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glEnableVertexAttribArray(0);
+        // Radius attribute (location = 1)
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
+        glBufferData(GL_ARRAY_BUFFER, radii.size() * sizeof(float), radii.data(), GL_DYNAMIC_DRAW);
+        glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glEnableVertexAttribArray(1);
+        // Color attribute (location = 2)
+        glBindBuffer(GL_ARRAY_BUFFER, VBO[2]);
+        glBufferData(GL_ARRAY_BUFFER, colors.size() * sizeof(float), colors.data(), GL_DYNAMIC_DRAW);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glEnableVertexAttribArray(2);
+        glDrawArrays(GL_POINTS, 0, world.objects.size());
+        glBindVertexArray(0);
+        glDeleteBuffers(3, VBO);
+        glDeleteVertexArrays(1, &VAO);
+        glUseProgram(0);
+    }
+    // End of renderLoop
 }
