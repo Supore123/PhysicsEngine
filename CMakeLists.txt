@@ -5,7 +5,25 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # -----------------------------
-# FetchContent for dependencies
+# System dependencies
+# -----------------------------
+# Threads (for GLFW)
+find_package(Threads REQUIRED)
+
+# OpenGL
+find_package(OpenGL REQUIRED)
+if (NOT OPENGL_FOUND)
+    message(FATAL_ERROR "OpenGL not found. Install libgl1-mesa-dev and libglu1-mesa-dev.")
+endif()
+
+# GLEW (system library)
+find_package(GLEW REQUIRED)
+if (NOT GLEW_FOUND)
+    message(FATAL_ERROR "GLEW not found. Install libglew-dev.")
+endif()
+
+# -----------------------------
+# FetchContent dependencies
 # -----------------------------
 include(FetchContent)
 
@@ -15,15 +33,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.3.8
 )
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable building docs")
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable building tests")
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable building examples")
 FetchContent_MakeAvailable(glfw)
-
-# GLEW
-FetchContent_Declare(
-    glew
-    GIT_REPOSITORY https://github.com/nigels-com/glew.git
-    GIT_TAG        glew-2.2.0
-)
-FetchContent_MakeAvailable(glew)
 
 # ImGui
 FetchContent_Declare(
@@ -34,7 +47,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(imgui)
 
 # -----------------------------
-# ImGui backend sources
+# ImGui sources
 # -----------------------------
 set(IMGUI_BACKENDS
     ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
@@ -42,12 +55,12 @@ set(IMGUI_BACKENDS
 )
 
 # -----------------------------
-# Source files
+# Project sources
 # -----------------------------
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/*.cpp)
 
 # -----------------------------
-# Add ImGui library
+# ImGui library
 # -----------------------------
 add_library(imgui_lib
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -64,17 +77,16 @@ target_include_directories(imgui_lib PUBLIC
 )
 
 target_compile_definitions(imgui_lib PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLEW)
-
-target_link_libraries(imgui_lib PUBLIC glfw glew)
+target_link_libraries(imgui_lib PUBLIC glfw GLEW::GLEW Threads::Threads)
 
 # -----------------------------
-# Create executable
+# PhysicsEngine executable
 # -----------------------------
 add_executable(PhysicsEngine ${SOURCES})
 target_include_directories(PhysicsEngine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc)
-target_link_libraries(PhysicsEngine PRIVATE imgui_lib OpenGL::GL)
+target_link_libraries(PhysicsEngine PRIVATE imgui_lib ${OPENGL_LIBRARIES} Threads::Threads)
 
 # -----------------------------
-# Optional: Print info
+# Optional info
 # -----------------------------
-message(STATUS "Dependencies loaded: GLFW, GLEW, ImGui")
+message(STATUS "Dependencies loaded: GLFW, ImGui, OpenGL, GLEW")
