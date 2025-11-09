@@ -2,249 +2,253 @@
 #include "physics.hpp"
 #include <imgui.h>
 #include <cmath>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
 
-static bool showDemoWindow = true; // Start enabled for debug
-
-// Now takes PhysicsWorld* for diagnostics display
 void drawUI(UIState& state, GLFWwindow* window, PhysicsWorld* world) {
-    if (ImGui::Button("Solar System Example") && world) {
-        world->objects.clear();
-        // Add a central star (the Sun)
-        Particle sun;
-        sun.x = 0.0f; sun.y = 0.0f;
-        sun.vx = 0.0f; sun.vy = 0.0f;
-        sun.radius = 0.08f;
-        sun.mass = 20.0f;
-        sun.isStatic = true;
-        sun.type = ObjectType::Star;
-        sun.luminosity = 1.5f;
-        sun.color = {1.0f, 0.9f, 0.2f};
-        sun.spin = 1.0f;
-        world->addObject(sun);
-
-        // Define planet parameters: {orbitRadius, radius, mass, color, spin}
-        struct PlanetDef { float orbitRadius, radius, mass, spin; Color3 color; };
-        std::vector<PlanetDef> planets = {
-            {0.13f, 0.018f, 0.3f, 3.0f, {0.7f, 0.7f, 0.7f}}, // Mercury
-            {0.17f, 0.022f, 0.6f, 2.5f, {0.9f, 0.7f, 0.4f}}, // Venus
-            {0.22f, 0.024f, 0.7f, 2.0f, {0.2f, 0.5f, 1.0f}}, // Earth
-            {0.28f, 0.020f, 0.5f, 2.2f, {1.0f, 0.4f, 0.2f}}, // Mars
-            {0.36f, 0.045f, 2.0f, 1.5f, {0.9f, 0.8f, 0.5f}}, // Jupiter
-            {0.44f, 0.038f, 1.5f, 1.2f, {0.8f, 0.9f, 0.7f}}, // Saturn
-            {0.52f, 0.030f, 1.0f, 1.0f, {0.5f, 0.8f, 1.0f}}, // Uranus
-            {0.60f, 0.028f, 0.8f, 0.8f, {0.4f, 0.7f, 1.0f}}  // Neptune
-        };
-        for (size_t i = 0; i < planets.size(); ++i) {
-            const auto& def = planets[i];
-            Particle planet;
-            planet.orbitTarget = 0; // Sun
-            planet.orbitRadius = def.orbitRadius;
-            planet.orbitAngle = float(i) * 0.7f; // Staggered starting positions
-            planet.x = sun.x + planet.orbitRadius * cos(planet.orbitAngle);
-            planet.y = sun.y + planet.orbitRadius * sin(planet.orbitAngle);
-            planet.radius = def.radius;
-            planet.mass = def.mass;
-            planet.isStatic = false;
-            planet.type = ObjectType::Planet;
-            planet.color = def.color;
-            planet.spin = def.spin;
-            float v = sqrt(0.5f * sun.mass / std::max(planet.orbitRadius, 1e-4f));
-            planet.vx = -v * sin(planet.orbitAngle);
-            planet.vy =  v * cos(planet.orbitAngle);
-            world->addObject(planet);
-        }
-    }
-    // --- Example Scenarios ---
-    ImGui::Begin("Example Scenarios");
-    if (ImGui::Button("Planet Orbiting Star") && world) {
-        world->objects.clear();
-        // Add a spinning star at the center
-        Particle star;
-        star.x = 0.0f; star.y = 0.0f;
-        star.vx = 0.0f; star.vy = 0.0f;
-        star.radius = 0.07f;
-        star.mass = 10.0f;
-        star.isStatic = true;
-        star.type = ObjectType::Star;
-        star.luminosity = 1.0f;
-        star.color = {1.0f, 0.9f, 0.2f};
-        star.spin = 1.2f; // Add visible spin
-        world->addObject(star);
-        // Add a planet in orbit with spin
-        Particle planet;
-        planet.orbitTarget = 0; // index of star
-        planet.orbitRadius = 0.35f;
-        planet.orbitAngle = 0.0f;
-        planet.x = star.x + planet.orbitRadius;
-        planet.y = star.y;
-        planet.radius = 0.03f;
-        planet.mass = 1.0f;
-        planet.isStatic = false;
-        planet.type = ObjectType::Planet;
-        planet.color = {0.2f, 0.5f, 1.0f};
-        planet.spin = 2.5f; // Add visible spin
-        float v = sqrt(0.5f * star.mass / std::max(planet.orbitRadius, 1e-4f));
-        planet.vx = 0.0f;
-        planet.vy = v;
-        world->addObject(planet);
-    }
-
-    if (ImGui::Button("Binary Star System") && world) {
-        world->objects.clear();
-        // Two spinning stars
-        float m1 = 6.0f, m2 = 6.0f;
-        float d = 0.4f; // separation
-        float barycenter_x = 0.0f;
-        float x1 = barycenter_x - d * m2 / (m1 + m2);
-        float x2 = barycenter_x + d * m1 / (m1 + m2);
-        float y1 = 0.0f, y2 = 0.0f;
-        Particle star1, star2;
-        star1.x = x1; star1.y = y1;
-        star2.x = x2; star2.y = y2;
-        star1.vx = 0.0f; star1.vy = 0.0f;
-        star2.vx = 0.0f; star2.vy = 0.0f;
-        star1.radius = star2.radius = 0.06f;
-        star1.mass = m1; star2.mass = m2;
-        star1.isStatic = star2.isStatic = true;
-        star1.type = star2.type = ObjectType::Star;
-        star1.luminosity = star2.luminosity = 1.0f;
-        star1.color = {1.0f, 0.7f, 0.2f};
-        star2.color = {1.0f, 0.3f, 0.7f};
-        star1.spin = 1.5f;
-        star2.spin = -1.5f;
-        world->addObject(star1);
-        world->addObject(star2);
-        // Add a planet stable between the two stars (L1 point) with spin
-        Particle planet;
-        planet.x = barycenter_x; planet.y = 0.0f;
-        planet.vx = 0.0f; planet.vy = 0.0f;
-        planet.radius = 0.025f;
-        planet.mass = 0.8f;
-        planet.isStatic = false;
-        planet.type = ObjectType::Planet;
-        planet.color = {0.2f, 1.0f, 0.7f};
-        planet.spin = 2.0f;
-        world->addObject(planet);
-    }
-
-    if (ImGui::Button("Black Hole with Accretion Disk") && world) {
-        world->objects.clear();
-        // Add a spinning black hole at the center
-        Particle bh;
-        bh.x = 0.0f; bh.y = 0.0f;
-        bh.vx = 0.0f; bh.vy = 0.0f;
-        bh.radius = 0.06f;
-        bh.mass = 15.0f;
-        bh.isStatic = true;
-        bh.type = ObjectType::BlackHole;
-        bh.eventHorizon = 0.09f;
-        bh.absorption = 1.0f;
-        bh.color = {0.1f, 0.1f, 0.1f};
-        bh.spin = 2.0f;
-        world->addObject(bh);
-        // Add accretion disk (many small asteroids in orbit, each with spin)
-        for (int i = 0; i < 18; ++i) {
-            float angle = i * (2.0f * 3.1415926f / 18);
-            Particle ast;
-            ast.orbitTarget = 0;
-            ast.orbitRadius = 0.18f + 0.02f * (i % 3);
-            ast.orbitAngle = angle;
-            ast.x = bh.x + ast.orbitRadius * cos(angle);
-            ast.y = bh.y + ast.orbitRadius * sin(angle);
-            ast.radius = 0.012f;
-            ast.mass = 0.15f;
-            ast.isStatic = false;
-            ast.type = ObjectType::Asteroid;
-            ast.color = {0.7f, 0.6f, 0.4f};
-            ast.spin = 3.0f * ((i % 2 == 0) ? 1.0f : -1.0f); // Alternate spin direction
-            float v = sqrt(0.5f * bh.mass / std::max(ast.orbitRadius, 1e-4f));
-            ast.vx = -v * sin(angle);
-            ast.vy =  v * cos(angle);
-            world->addObject(ast);
-        }
-    }
-    ImGui::End();
-    // Place Simulation Controls at left side, vertically centered, allow moving/resizing
+    if (!world) return;
+    
     int display_w, display_h;
     glfwGetWindowSize(window, &display_w, &display_h);
-    ImVec2 simWinSize(400, 400);
-    ImVec2 simWinPos(40, (display_h - simWinSize.y) * 0.5f);
-    ImGui::SetNextWindowPos(simWinPos, ImGuiCond_Once);
-    ImGui::SetNextWindowSize(simWinSize, ImGuiCond_Once);
-    ImGui::Begin("Simulation Controls", nullptr, ImGuiWindowFlags_NoCollapse);
-    ImGui::SliderFloat("Gravity", &state.gravity, -2.0f, 2.0f);
-    ImGui::SliderFloat("Restitution", &state.restitution, 0.0f, 1.0f);
-    ImGui::SliderFloat("Friction", &state.friction, 0.0f, 0.5f);
-    ImGui::SliderFloat("Time Scale", &state.timeScale, 0.01f, 2.0f, "%.2fx");
-    ImGui::Checkbox("Show Trails", &state.showTrails);
-    ImGui::Checkbox("Show Labels", &state.showLabels);
-    ImGui::Checkbox("Show Field", &state.showField);
-    ImGui::Checkbox("Show Axes", &state.showAxes);
-    ImGui::Checkbox("Paused", &state.paused);
-    ImGui::Separator();
-    // --- Diagnostics: Energy and Momentum ---
-    if (world) {
-        float ke = world->totalKineticEnergy();
-        float px = 0.0f, py = 0.0f;
-        world->totalMomentum(px, py);
-        ImGui::Text("Kinetic Energy: %.3f", ke);
-        ImGui::Text("Momentum: (%.3f, %.3f)", px, py);
-    }
-    ImGui::Separator();
-    // --- ImGui controls for creating new particles ---
-    static int selectedType = 0;
-    static float px = 0.0f, py = 0.0f, pvx = 0.0f, pvy = 0.0f;
-    static float pradius = 0.03f, pmass = 1.0f, pcharge = 0.0f;
-    static float pspin = 0.0f;
-    static bool pisStatic = false;
-    static float pcolor[3] = {1.0f, 0.0f, 0.0f};
-    static float eventHorizon = 0.1f, luminosity = 0.0f, absorption = 1.0f;
-    static float orbitRadius = 0.2f, orbitAngle = 0.0f;
-    static int orbitTarget = -1;
-
-    ImGui::Text("Create New Object");
-    const char* typeNames[] = {"Normal", "BlackHole", "Star", "Planet", "Asteroid"};
-    ImGui::Combo("Type", &selectedType, typeNames, IM_ARRAYSIZE(typeNames));
-    ImGui::InputFloat2("Position (x, y)", &px);
-    ImGui::InputFloat2("Velocity (vx, vy)", &pvx);
-    ImGui::InputFloat("Radius", &pradius);
-    ImGui::InputFloat("Mass", &pmass);
-    ImGui::InputFloat("Charge", &pcharge);
-    ImGui::Checkbox("Static", &pisStatic);
-    ImGui::ColorEdit3("Color", pcolor);
-    ImGui::InputFloat("Spin (rad/s)", &pspin, 0.01f, 0.1f, "%.3f");
-    if (selectedType == 1) { // BlackHole
-        ImGui::InputFloat("Event Horizon", &eventHorizon);
-        ImGui::InputFloat("Absorption", &absorption);
-    }
-    if (selectedType == 2) { // Star
-        ImGui::InputFloat("Luminosity", &luminosity);
-    }
-    if (selectedType == 3) { // Planet
-        ImGui::InputFloat("Orbit Radius", &orbitRadius);
-        ImGui::InputFloat("Orbit Angle", &orbitAngle);
-        ImGui::InputInt("Orbit Target (index)", &orbitTarget);
-    }
-    if (ImGui::Button("Add Object") && world) {
-        Particle p;
-        p.x = px; p.y = py;
-        p.vx = pvx; p.vy = pvy;
-        p.radius = pradius;
-        p.mass = pmass;
-        p.charge = pcharge;
-        p.isStatic = pisStatic;
-        p.color = {pcolor[0], pcolor[1], pcolor[2]};
-        p.spin = pspin;
-        switch (selectedType) {
-            case 0: p.type = ObjectType::Normal; break;
-            case 1: p.type = ObjectType::BlackHole; p.eventHorizon = eventHorizon; p.absorption = absorption; break;
-            case 2: p.type = ObjectType::Star; p.luminosity = luminosity; break;
-            case 3: p.type = ObjectType::Planet; p.orbitRadius = orbitRadius; p.orbitAngle = orbitAngle; p.orbitTarget = orbitTarget; break;
-            case 4: p.type = ObjectType::Asteroid; break;
+    
+    // Main control panel
+    ImVec2 mainWinSize(450, 600);
+    ImVec2 mainWinPos(40, (display_h - mainWinSize.y) * 0.5f);
+    ImGui::SetNextWindowPos(mainWinPos, ImGuiCond_Once);
+    ImGui::SetNextWindowSize(mainWinSize, ImGuiCond_Once);
+    
+    ImGui::Begin("Physics Simulator Controls", nullptr, ImGuiWindowFlags_NoCollapse);
+    
+    // === SIMULATION CONTROLS ===
+    if (ImGui::CollapsingHeader("Simulation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat("Gravity", &state.gravity, -2.0f, 2.0f);
+        ImGui::SliderFloat("Time Scale", &state.timeScale, 0.01f, 3.0f, "%.2fx");
+        ImGui::Checkbox("Paused", &state.paused);
+        ImGui::SameLine();
+        if (ImGui::Button("Step")) {
+            world->step(1.0f / 60.0f);
         }
-        world->addObject(p);
+        
+        // NEW: Advanced physics options
+        ImGui::Separator();
+        ImGui::SliderFloat("Air Drag", &world->airDragCoefficient, 0.0f, 0.1f, "%.4f");
+        ImGui::Checkbox("Relativistic Effects", &world->relativisticEffects);
+        
+        if (ImGui::Button("Clear All")) {
+            world->objects.clear();
+            world->stats.reset();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset Stats")) {
+            world->stats.reset();
+        }
     }
+    
+    // === DIAGNOSTICS ===
+    if (ImGui::CollapsingHeader("Diagnostics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Objects: %zu", world->objects.size());
+        
+        float ke = world->totalKineticEnergy();
+        float pe = world->totalPotentialEnergy();
+        float total = ke + pe;
+        ImGui::Text("Kinetic E: %.3f", ke);
+        ImGui::Text("Potential E: %.3f", pe);
+        ImGui::Text("Total E: %.3f", total);
+        
+        float px, py;
+        world->totalMomentum(px, py);
+        float pMag = std::sqrt(px * px + py * py);
+        ImGui::Text("Momentum: %.3f", pMag);
+        
+        float L = world->totalAngularMomentum();
+        ImGui::Text("Angular Mom: %.3f", L);
+        
+        ImGui::Separator();
+        ImGui::Text("Collisions: %zu", world->stats.totalCollisions);
+        ImGui::Text("Absorbed: %zu", world->stats.objectsAbsorbed);
+        ImGui::Text("Energy Lost: %.3f", world->stats.totalEnergyLost);
+    }
+    
+    // === FORCE FIELDS ===
+    if (ImGui::CollapsingHeader("Force Fields")) {
+        static int fieldType = 0;
+        static float fieldX = 0.0f, fieldY = 0.0f;
+        static float fieldStrength = 1.0f, fieldRadius = 0.3f;
+        static float fieldAngle = 0.0f;
+        
+        ImGui::Combo("Type", &fieldType, "Radial\0Vortex\0Directional\0");
+        ImGui::InputFloat2("Position", &fieldX);
+        ImGui::SliderFloat("Strength", &fieldStrength, -5.0f, 5.0f);
+        ImGui::SliderFloat("Radius", &fieldRadius, 0.1f, 1.0f);
+        
+        if (fieldType == 2) { // Directional
+            ImGui::SliderAngle("Angle", &fieldAngle);
+        }
+        
+        if (ImGui::Button("Add Force Field")) {
+            ForceField field;
+            field.type = static_cast<ForceField::Type>(fieldType);
+            field.x = fieldX;
+            field.y = fieldY;
+            field.strength = fieldStrength;
+            field.radius = fieldRadius;
+            field.angle = fieldAngle;
+            world->addForceField(field);
+        }
+        
+        ImGui::Separator();
+        ImGui::Text("Active Fields: %zu", world->forceFields.size());
+        for (size_t i = 0; i < world->forceFields.size(); ++i) {
+            ImGui::PushID(i);
+            ImGui::Checkbox("##active", &world->forceFields[i].active);
+            ImGui::SameLine();
+            ImGui::Text("Field %zu", i);
+            ImGui::SameLine();
+            if (ImGui::Button("Remove")) {
+                world->removeForceField(i);
+                --i;
+            }
+            ImGui::PopID();
+        }
+        
+        if (!world->forceFields.empty() && ImGui::Button("Clear All Fields")) {
+            world->clearForceFields();
+        }
+    }
+    
+    // === PRESET SCENARIOS ===
+    if (ImGui::CollapsingHeader("Scenarios")) {
+        if (ImGui::Button("Solar System", ImVec2(-1, 0))) {
+            world->objects.clear();
+            // Sun
+            auto sun = ParticleUtils::createStar(0, 0, 20.0f, 5778.0f);
+            sun.isStatic = true;
+            world->addObject(sun);
+            
+            // Planets with proper settings
+            struct PlanetDef { float r, rad, m, spin; Color3 c; bool gas; };
+            std::vector<PlanetDef> planets = {
+                {0.13f, 0.018f, 0.3f, 3.0f, {0.7f, 0.7f, 0.7f}, false}, // Mercury
+                {0.17f, 0.022f, 0.6f, 2.5f, {0.9f, 0.7f, 0.4f}, false}, // Venus
+                {0.22f, 0.024f, 0.7f, 2.0f, {0.2f, 0.5f, 1.0f}, false}, // Earth
+                {0.28f, 0.020f, 0.5f, 2.2f, {1.0f, 0.4f, 0.2f}, false}, // Mars
+                {0.36f, 0.045f, 2.0f, 1.5f, {0.9f, 0.8f, 0.5f}, true},  // Jupiter
+                {0.44f, 0.038f, 1.5f, 1.2f, {0.8f, 0.9f, 0.7f}, true},  // Saturn
+            };
+            
+            for (size_t i = 0; i < planets.size(); ++i) {
+                auto& def = planets[i];
+                auto p = ParticleUtils::createPlanet(0, 0, def.rad, def.m, def.gas);
+                p.orbitTarget = 0;
+                p.orbitRadius = def.r;
+                p.orbitAngle = float(i) * 0.7f;
+                p.color = def.c;
+                p.spin = def.spin;
+                p.tidallyLocked = (i < 2); // Inner planets tidally locked
+                world->addObject(p);
+            }
+        }
+        
+        if (ImGui::Button("Binary Stars", ImVec2(-1, 0))) {
+            world->objects.clear();
+            auto s1 = ParticleUtils::createStar(-0.3f, 0, 6.0f, 6000.0f);
+            auto s2 = ParticleUtils::createStar(0.3f, 0, 6.0f, 4500.0f);
+            s1.vy = 0.08f; s2.vy = -0.08f;
+            world->addObject(s1);
+            world->addObject(s2);
+        }
+        
+        if (ImGui::Button("Black Hole + Accretion", ImVec2(-1, 0))) {
+            world->objects.clear();
+            auto bh = ParticleUtils::createBlackHole(0, 0, 15.0f);
+            bh.isStatic = true;
+            world->addObject(bh);
+            
+            world->createAsteroidBelt(0, 0, 0.15f, 0.25f, 30);
+        }
+        
+        if (ImGui::Button("Galaxy Formation", ImVec2(-1, 0))) {
+            world->objects.clear();
+            world->createGalaxy(0, 0, 3, 15);
+        }
+        
+        if (ImGui::Button("Supernova Demo", ImVec2(-1, 0))) {
+            world->objects.clear();
+            auto star = ParticleUtils::createStar(0, 0, 12.0f, 8000.0f);
+            star.lifetime = 5.0f; // Will go supernova in 5 seconds
+            world->addObject(star);
+        }
+    }
+    
+    // === OBJECT CREATOR ===
+    if (ImGui::CollapsingHeader("Create Objects")) {
+        static int objType = 0;
+        static float px = 0.0f, py = 0.0f, pvx = 0.0f, pvy = 0.0f;
+        static float pradius = 0.03f, pmass = 1.0f;
+        static float pspin = 0.0f, ptemp = 273.0f;
+        static bool pisStatic = false, ptidalLock = false;
+        static float pcolor[3] = {1.0f, 0.0f, 0.0f};
+        
+        const char* types[] = {"Normal", "Star", "Planet", "Gas Giant", 
+                               "BlackHole", "NeutronStar", "Asteroid", "Comet"};
+        ImGui::Combo("Type", &objType, types, IM_ARRAYSIZE(types));
+        
+        ImGui::InputFloat2("Position", &px);
+        ImGui::InputFloat2("Velocity", &pvx);
+        ImGui::InputFloat("Radius", &pradius, 0.001f, 0.01f, "%.3f");
+        ImGui::InputFloat("Mass", &pmass);
+        ImGui::InputFloat("Spin", &pspin, 0.1f, 1.0f);
+        
+        if (objType == 1) { // Star
+            ImGui::InputFloat("Temperature (K)", &ptemp);
+        }
+        
+        ImGui::ColorEdit3("Color", pcolor);
+        ImGui::Checkbox("Static", &pisStatic);
+        ImGui::Checkbox("Tidally Locked", &ptidalLock);
+        
+        if (ImGui::Button("Add Object", ImVec2(-1, 0))) {
+            Particle p;
+            p.x = px; p.y = py;
+            p.vx = pvx; p.vy = pvy;
+            p.radius = pradius;
+            p.mass = pmass;
+            p.spin = pspin;
+            p.isStatic = pisStatic;
+            p.tidallyLocked = ptidalLock;
+            p.color = {pcolor[0], pcolor[1], pcolor[2]};
+            
+            switch (objType) {
+                case 0: p.type = ObjectType::Normal; break;
+                case 1: 
+                    p.type = ObjectType::Star; 
+                    p.temperature = ptemp;
+                    p.emitsLight = true;
+                    p.luminosity = pmass * 0.1f;
+                    break;
+                case 2: p.type = ObjectType::RockyPlanet; break;
+                case 3: p.type = ObjectType::GasGiant; break;
+                case 4: 
+                    p = ParticleUtils::createBlackHole(px, py, pmass);
+                    break;
+                case 5: 
+                    p = ParticleUtils::createNeutronStar(px, py, pmass);
+                    break;
+                case 6: p.type = ObjectType::Asteroid; break;
+                case 7: 
+                    p = ParticleUtils::createComet(px, py, pvx, pvy);
+                    break;
+            }
+            
+            world->addObject(p);
+        }
+    }
+    
+    // === VISUAL OPTIONS ===
+    if (ImGui::CollapsingHeader("Visuals")) {
+        ImGui::Checkbox("Show Trails", &state.showTrails);
+        ImGui::Checkbox("Show Labels", &state.showLabels);
+        ImGui::Checkbox("Show Field", &state.showField);
+        ImGui::Checkbox("Show Axes", &state.showAxes);
+    }
+    
     ImGui::End();
 }
