@@ -5,7 +5,7 @@ Designed as a foundation to build up from — expect continuous updates and impr
 
 ---
 
-## 🚀 Features & Goals
+## Features & Goals
 
 - Simple core for **rigid-body dynamics**, collision detection / response, and constraint solving  
 - Modularity so you can extend or swap subsystems (e.g. integrate better integrators, collision algorithms, etc.)  
@@ -14,7 +14,7 @@ Designed as a foundation to build up from — expect continuous updates and impr
 
 ---
 
-## 🏗 Repository Layout
+## Repository Layout
 
 
 - **inc/** — declarations of physics classes, utilities, etc.  
@@ -24,7 +24,7 @@ Designed as a foundation to build up from — expect continuous updates and impr
 
 ---
 
-## 🧩 Getting Started (Build & Run)
+## Getting Started (Build & Run)
 
 ### Prerequisites
 
