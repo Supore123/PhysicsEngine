@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cmath>
+#include <memory>
 
 // Color struct for rendering
 struct Color3 {
