@@ -65,7 +65,7 @@ struct Particle {
     // Visual effects
     float spin = 0.0f;
     float spinAngle = 0.0f;
-    Trail* trail = nullptr; // Optional trail rendering
+    std::shared_ptr<Trail> trail; // Optional trail rendering
     
     // NEW: Enhanced physics properties
     float temperature = 273.0f;  // Kelvin
