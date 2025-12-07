@@ -189,7 +189,7 @@ Particle ParticleUtils::createComet(float x, float y, float vx, float vy) {
     comet.density = 0.5f;
     
     // Create trail
-    comet.trail = new Trail();
+    comet.trail = std::make_shared<Trail>();
     comet.trail->maxPoints = 150;
     
     return comet;
