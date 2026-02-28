@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            cmake build-essential \
+            libgl1-mesa-dev libglu1-mesa-dev libglew-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+
+      # cache catch2 so it's not re-downloaded every run
+      - name: Cache Catch2
+        id: cache-catch2
+        uses: actions/cache@v4
+        with:
+          path: tests/catch.hpp
+          key: catch2-v2.13.10
+
+      - name: Download Catch2
+        if: steps.cache-catch2.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p tests
+          curl -sSL https://github.com/catchorg/Catch2/releases/download/v2.13.10/catch.hpp \
+               -o tests/catch.hpp
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # main exe needs a display so only run the tests here
+      - name: Test
+        run: ./build/PhysicsTests --reporter console
+
+      - name: Upload build on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-build
+          path: build/
+          retention-days: 5

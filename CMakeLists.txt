@@ -90,3 +90,9 @@ target_link_libraries(PhysicsEngine PRIVATE imgui_lib ${OPENGL_LIBRARIES} Thread
 # Optional info
 # -----------------------------
 message(STATUS "Dependencies loaded: GLFW, ImGui, OpenGL, GLEW")
+
+add_executable(PhysicsTests tests/test_physics.cpp src/physics.cpp src/particle.cpp)
+target_include_directories(PhysicsTests PRIVATE inc tests)
+target_link_libraries(PhysicsTests PRIVATE Threads::Threads)
+enable_testing()
+add_test(NAME PhysicsTests COMMAND PhysicsTests)
