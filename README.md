@@ -1,43 +1,114 @@
 # PhysicsEngine
 
-A lightweight C++ physics engine setup for prototyping and testing basic physics systems.  
-Designed as a foundation to build up from — expect continuous updates and improvements.
+A 2D physics engine built in C++ with an OpenGL/ImGui frontend. Started as a sandbox for testing physics systems and has grown to include n-body gravity, collision detection, force fields, and a basic celestial object simulation. Still a work in progress — expect rough edges.
 
 ---
 
-## Features & Goals
+## What it does
 
-- Simple core for **rigid-body dynamics**, collision detection / response, and constraint solving  
-- Modularity so you can extend or swap subsystems (e.g. integrate better integrators, collision algorithms, etc.)  
-- Intended as a sandbox / learning tool rather than a production-grade engine  
-- CMake-based build for cross-platform flexibility  
-
----
-
-## Repository Layout
-
-
-- **inc/** — declarations of physics classes, utilities, etc.  
-- **src/** — source (.cpp) files implementing the core logic  
-- **third_party/** — helper libraries, external code you rely on  
-- **CMakeLists.txt** — build configuration (targets, includes, dependencies)  
+- N-body gravitational attraction between objects
+- Rigid-body collision detection and response (spatial grid broadphase + impulse resolution)
+- Continuous collision detection to prevent tunnelling at high speeds
+- Force fields: radial, vortex, and directional
+- Air drag
+- Celestial object types: stars, planets, black holes, neutron stars, comets, asteroids, gas giants
+- Black hole absorption, supernova events, tidal disruption
+- Comet trails
+- Temperature-based star colouring
+- Gravity field visualisation (arrow grid, colour-mapped by field strength)
+- ImGui control panel: add/remove objects, tweak physics parameters, load preset scenarios
 
 ---
 
-## Getting Started (Build & Run)
+## Project structure
 
-### Prerequisites
+```
+PhysicsEngine/
+├── inc/            # Header files
+├── src/            # Source files
+├── tests/          # Unit tests (Catch2)
+├── third_party/    # External dependencies (gitignored)
+└── CMakeLists.txt
+```
 
-- A modern C++ compiler (supporting at least C++17)  
-- CMake (≥ 3.10 suggested)  
-- rendering / UI library if you integrate a frontend (e.g. ImGui, OpenGL) is required for handling the outport viewing
+---
 
-### Build Instructions
+## Dependencies
+
+**System packages** — install these first:
+
+```bash
+# Ubuntu/Debian
+sudo apt install libgl1-mesa-dev libglu1-mesa-dev libglew-dev
+```
+
+**Fetched automatically by CMake:**
+- GLFW 3.3.8
+- ImGui v1.89.8
+
+**For tests only:**
+- Catch2 (single header, see Testing section below)
+
+---
+
+## Building
 
 ```bash
 git clone https://github.com/Supore123/PhysicsEngine.git
 cd PhysicsEngine
-mkdir build
-cd build
-cmake ..
-cmake --build .
+cmake -S . -B build
+cmake --build build
+./build/PhysicsEngine
+```
+
+---
+
+## Controls
+
+| Input | Action |
+|---|---|
+| `M` | Spawn object at cursor position |
+| `Backspace` | Remove last non-static object |
+| `P` | Pause / unpause |
+| `Escape` | Quit |
+
+Mouse input is handled through the ImGui panel — use it to add specific object types, adjust gravity, load scenarios, etc.
+
+---
+
+## Testing
+
+Tests use [Catch2](https://github.com/catchorg/Catch2) (v2.x, single-header). You need to download the header once:
+
+```bash
+curl -L https://github.com/catchorg/Catch2/releases/download/v2.13.10/catch.hpp \
+     -o tests/catch.hpp
+```
+
+Then build and run:
+
+```bash
+cmake -S . -B build
+cmake --build build
+./build/PhysicsTests
+```
+
+Or via CTest:
+
+```bash
+cd build && ctest --output-on-failure
+```
+
+The tests cover: particle kinematics, energy/momentum diagnostics, wall collisions, n-body attraction, spatial grid, force fields, air drag, and all the `ParticleUtils` factory functions. See `tests/test_physics.cpp` for the full list.
+
+> `catch.hpp` is excluded from version control (.gitignore) — you'll need to re-download it after a fresh clone.
+
+---
+
+## Known issues / TODO
+
+- [ ] Tunnelling fix (Issue #4) — CCD substep count is a rough heuristic, not robust for very fast small objects
+- [ ] Numerical instability with degenerate shapes (Issue #5)
+- [ ] Multi-contact solver needs proper iterative resolution rather than single-pass (Issue #6)
+- [ ] No broad-phase culling for the gravity field renderer — gets slow with many objects
+- [ ] Trails aren't rendered yet despite the Trail struct existing in `particle.hpp`
