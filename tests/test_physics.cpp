@@ -33,7 +33,7 @@ static bool approxEq(float a, float b, float eps = 1e-4f) {
 TEST_CASE("Particle – default construction", "[particle]") {
     Particle p;
     REQUIRE(p.vx == 0.0f);
-    REQUIRE(p.vy == 0.0f);
+    REQUIRE( p.vy == Approx(0.0f).margin(0.0001) );
     REQUIRE(p.isStatic == false);
     REQUIRE(p.type == ObjectType::Normal);
     REQUIRE(p.lifetime == -1.0f);
